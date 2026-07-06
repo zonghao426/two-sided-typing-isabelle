@@ -577,16 +577,18 @@ next
     by (auto 0 3 simp: blocked_def usubst_def term.Sb_Inj dest!: spec[of _ "Var z"])
 qed
 
-lemma eval_ctx_fresh: 
+lemma eval_ctx_fresh:
+  fixes A :: "'var::var set" and hole :: 'var and z and E
   assumes fnt: "finite A" and ctx: "eval_ctx hole E"
   shows "\<exists>hole' E'. (\<forall>N. hole' \<notin> FVars N \<longrightarrow> eval_ctx hole' E'[N <- z]) \<and> (hole' \<notin> A)"
 proof -
   have "E = E[Var hole <- hole]" using subst_iden by simp
   then have "blocked hole E" unfolding blocked_def
     using ctx by blast
-  then obtain hole' E' where "\<forall>N. hole' \<notin> FVars N \<longrightarrow> eval_ctx hole' E'[N <- hole]" and "hole' \<notin> A"
-    using fnt blocked_fresh_hole sorry
-  then show ?thesis by auto
+  then obtain hole' :: "'var :: var" and E' where "\<forall>N. hole' \<notin> FVars N \<longrightarrow> eval_ctx hole' E'[N <- z]" and "hole' \<notin> A"
+    using fnt blocked_fresh_hole by (metis blocked_def insert_iff)
+  then show ?thesis
+    by auto
 qed
 
 lemma eval_subst: "eval_ctx x E \<Longrightarrow> y \<notin> FVars E \<Longrightarrow> eval_ctx y E[Var y <- x]"
@@ -2377,8 +2379,8 @@ proof -
         next
           case B
           then obtain W where "val W" and *: "R1[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
-          then have "\<nexists>f x Q. W = Fix f x Q" using 3(2, 3) b5_prop_not_fix by blast
-          then have "stuckEx (App W R2[P <- z])" using \<open>val W\<close> stuckEx.intros(3)[of W] by auto
+          then have "\<nexists>f x Q. W = Fix f x Q" using 3(2, 3) b5_prop_not_fix by (metis is_Fix_def)
+          then have "stuckEx (App W R2[P <- z])" using \<open>val W\<close> stuckEx.intros(3)[of W] by (auto simp: is_Fix_def)
           moreover obtain thole :: 'a where "eval_ctx thole (Var thole)" using eval_ctx.intros by auto
           ultimately have "stuck (App W R2[P <- z])" unfolding stuck_def
             by (meson eval_ctx.intros(1) usubst_simps(5))
@@ -2406,8 +2408,8 @@ proof -
           next
             case B
             then obtain W where "val W" and "V'[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
-            then have "\<nexists>W1 W2. W = Pair W1 W2" using 4 b5_prop_not_pair[of V] by blast
-            then have "stuckEx (Let xy W M'[P <- z])" using \<open>val W\<close> stuckEx.intros by auto
+            then have "\<nexists>W1 W2. W = Pair W1 W2" using 4 b5_prop_not_pair[of V] by (metis is_Pair_def)
+            then have "stuckEx (Let xy W M'[P <- z])" using \<open>val W\<close> stuckEx.intros by (auto simp: is_Pair_def)
             then have "stuck (Let xy W M'[P <- z])"
               using eval_ctx.intros(1) stuck_def by force
             then have "getStuck (Let xy V'[P <- z] M'[P <- z])" unfolding getStuck_def
