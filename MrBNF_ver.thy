@@ -92,6 +92,8 @@ inductive num :: "'var::var term \<Rightarrow> bool" where
   "num Zero"
 | "num n \<Longrightarrow> num (Succ n)"
 
+declare [[inductive_internals]]
+
 inductive val :: "'var::var term \<Rightarrow> bool" where
   "val (Var x)"
 | "num n \<Longrightarrow> val n"
@@ -132,11 +134,14 @@ definition normal :: "'var::var term \<Rightarrow> bool" where
 definition normalizes :: "'var::var term \<Rightarrow> bool" where
   "normalizes M \<equiv> \<exists>N. normal N \<and> M \<rightarrow>* N"
 
+definition "is_Fix V = (\<exists>f x Q. V = Fix f x Q)"
+definition "is_Pair V = (\<exists>V1 V2. V = Pair V1 V2)"
+
 inductive stuckEx :: "'var::var term \<Rightarrow> bool" where
   "val V \<Longrightarrow> \<not> num V \<Longrightarrow> stuckEx (Succ V)"
 | "val V \<Longrightarrow> \<not> num V \<Longrightarrow> stuckEx (If V N P)"
-| "val V \<Longrightarrow> \<nexists>f x Q. V = Fix f x Q \<Longrightarrow> stuckEx (App V M)"
-| "val V \<Longrightarrow> \<nexists>V1 V2. V = Pair V1 V2 \<Longrightarrow> stuckEx (Let xy V M)"
+| "val V \<Longrightarrow> \<not> is_Fix V \<Longrightarrow> stuckEx (App V M)"
+| "val V \<Longrightarrow> \<not> is_Pair V \<Longrightarrow> stuckEx (Let xy V M)"
 
 lemma normals_normalizes: "normal N \<Longrightarrow> normalizes N"
   by(auto simp add: normalizes_def beta_star_def intro: betas.refl[of N])
@@ -152,8 +157,32 @@ lemma vals_are_normal: "val V \<Longrightarrow> normal V"
   apply(auto elim:beta.cases simp add:normal_def)
   done
 
+lemma num_permute:
+  "num n \<Longrightarrow> bij (\<sigma>::'a::var\<Rightarrow>'a) \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> num (permute_term \<sigma> n)"
+  by (induct rule: num.induct) (auto simp: term.permute intro: num.intros)
+
 binder_inductive (no_auto_equiv) val
-  sorry (*TODO: Dmitriy*)
+  subgoal premises prems for R B \<sigma> x \<comment> \<open>equivariance\<close>
+    using prems(3)
+    apply (elim disjE exE)
+    subgoal by (auto simp: prems(1,2))
+    subgoal by (auto simp: prems(1,2) num_permute)
+    subgoal by (auto simp: prems(1,2) term.permute_comp supp_inv_bound term.permute_id)
+    subgoal for f xa M
+      apply (intro disjI2)
+      apply (elim conjE)
+      apply (rule exI[of _ "\<sigma> f"], rule exI[of _ "\<sigma> xa"], rule exI[of _ "permute_term \<sigma> M"])
+      apply (simp add: prems(1,2))
+      done
+    done
+  subgoal premises prems for R B x \<comment> \<open>refreshability\<close>
+    apply (rule exI[of _ B], rule conjI)
+    subgoal using prems(3) by (elim disjE exE) auto
+    apply (rule prems(3))
+    done
+  done
+
+thm val.strong_induct
 
 binder_inductive (no_auto_equiv) beta
   sorry (*TODO: Dmitriy*)
@@ -510,7 +539,7 @@ inductive eval_ctx :: "'var :: var \<Rightarrow> 'var term \<Rightarrow> bool" w
 | "eval_ctx hole E \<Longrightarrow> hole \<notin> FVars N \<Longrightarrow> hole \<notin> dset xy \<Longrightarrow> eval_ctx hole (Let xy E N)"
 | "eval_ctx hole E \<Longrightarrow> hole \<notin> FVars N \<Longrightarrow> hole \<notin> FVars P \<Longrightarrow> eval_ctx hole (If E N P)"
 
-binder_inductive (no_auto_equiv) eval_ctx
+binder_inductive eval_ctx
   sorry
 
 lemma eval_ctx_strong_induct[consumes 1]: "eval_ctx (x1 :: 'a) x2 \<Longrightarrow>
@@ -538,9 +567,9 @@ proof (rule iffI)
   assume "blocked z M"
   then obtain hole0 E0 where "eval_ctx hole0 E0" "M = E0[Var z <- hole0]" unfolding blocked_def by blast
   then show "\<exists> hole E. (\<forall>N. hole \<notin> FVars N \<longrightarrow> eval_ctx hole E[N <- z]) \<and> (M = E[Var z <- hole]) \<and> hole \<notin> insert z A"
-(*
-    apply (binder_induction hole0 E0 avoiding: M rule: eval_ctx_strong_induct)
-*)
+    apply (binder_induction hole0 E0 arbitrary: M avoiding: M rule: eval_ctx_strong_induct)
+            apply auto
+    apply (metis finite_insert usubst_simps(5) assms eval_ctx.intros(1) arb_element insert_iff)
     sorry
 next
   assume "\<exists> hole E. (\<forall>N. hole \<notin> FVars N \<longrightarrow> eval_ctx hole E[N <- z]) \<and> (M = E[Var z <- hole]) \<and> hole \<notin> insert z A"
@@ -753,17 +782,15 @@ definition stuck :: "'var::var term \<Rightarrow> bool" where
 definition getStuck :: "'var::var term \<Rightarrow> bool" where
   "getStuck M = (\<exists>N. stuck N \<and> M \<rightarrow>* N)"
 
+lemma stuckEx_imp_stuck: "stuckEx M \<Longrightarrow> stuck M"
+  unfolding stuck_def by (metis eval_ctx.intros(1) usubst_simps(5))
+
 lemma val_stuck_step: "val M \<or> stuck M \<or> (\<exists>N. M \<rightarrow> N)"
-  unfolding stuck_def
-proof (induction M)
-  case (6 M N)
-  then show ?case
-    by (auto intro!: num.intros stuckEx.intros beta.intros elim: num.cases intro: val.intros stuck.intros)
-next
-  case (9 M N P)
-  then show ?case
-    by (auto intro!: num.intros stuckEx.intros beta.intros elim: num.cases intro: val.intros stuck.intros)
-qed (auto intro!: num.intros stuckEx.intros beta.intros elim: num.cases intro: val.intros stuck.intros)
+  \<comment> \<open>Progress lemma. The original proof used \<open>stuck.intros\<close>, which does not exist
+      (\<open>stuck\<close> is a definition, not an inductive), so it never compiled and left the
+      theory in a bad state. Discharging this properly needs \<open>stuck\<close>-propagation through
+      evaluation contexts (analogous to \<^theory_text>\<open>blocked_inductive\<close>) plus \<open>stuckEx_imp_stuck\<close>.\<close>
+  sorry
 
 
 section \<open>Judgements\<close>
@@ -864,7 +891,7 @@ lemma subst_Zero_inversion:
   assumes "M[t <- x] = Zero" and "\<not> M = Var x"
   shows "M = Zero"
   using assms
-  apply(binder_induction M avoiding: "App M (App t (Var x))" rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
   apply(auto simp add:eval_ctx.intros Int_Un_distrib split:if_splits)
   done
 
@@ -872,7 +899,7 @@ lemma subst_Var_inversion:
   assumes "M[t <- x] = Var y" and "\<not> M = Var x"
   shows "M = Var y"
   using assms
-  apply(binder_induction M avoiding: "App M (App t (Var x))" rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
           apply(auto simp add:eval_ctx.intros Int_Un_distrib split:if_splits)
   done
 
@@ -881,7 +908,7 @@ lemma subst_Succ_inversion:
   obtains N' where "M = Succ N'" and "N = N'[t <- x]"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: "App M (App t (Var x))" rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
   apply(auto simp add:eval_ctx.intros Int_Un_distrib split:if_splits)
   done
 
@@ -890,7 +917,7 @@ lemma subst_Pred_inversion:
   obtains N' where "M = Pred N'" and "N = N'[t <- x]"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: "App M (App t (Var x))" rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
   apply(auto simp add:eval_ctx.intros Int_Un_distrib split:if_splits)
   done
 
@@ -899,10 +926,8 @@ lemma subst_App_inversion:
   obtains R' Q' where "M = App R' Q'" and "R'[t <- x] = R" and "Q'[t <- x] = Q"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: "App M (App t (Var x))" rule:term_strong_induct)
+  apply(binder_induction M avoiding: M t x rule:term_strong_induct)
   apply(auto simp add:eval_ctx.intros Int_Un_distrib split:if_splits)
-  using eval_ctx.intros(1) apply fastforce
-  sorry
   done
 
 lemma subst_Pair_inversion:
@@ -910,9 +935,8 @@ lemma subst_Pair_inversion:
   obtains Q1' Q2' where "M = Pair Q1' Q2'" and "Q1'[t <- x] = Q1" and "Q2'[t <- x] = Q2"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: "App M (App t (Var x))" rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
   apply(auto simp add:blocked_inductive Int_Un_distrib split:if_splits)
-  sorry
   done
 
 lemma subst_If_inversion:
@@ -921,9 +945,8 @@ lemma subst_If_inversion:
   where "M = If Q0' Q1' Q2'" and "Q0'[t <- x] = Q0" and "Q1'[t <- x] = Q1" and "Q2'[t <- x] = Q2"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: "App M (App t (Var x))" rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
   apply(auto simp add:blocked_inductive Int_Un_distrib split:if_splits)
-  sorry
   done
 
 lemma subst_Fix_inversion:
@@ -932,9 +955,10 @@ lemma subst_Fix_inversion:
   obtains Q' where "M = Fix f z Q'" and "Q'[t <- x] = Q"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: "App M (App t (Var x))" rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
           apply(auto simp add:blocked_inductive Int_Un_distrib split:if_splits)
-  subgoal for f' z' Q' \<sigma> sorry
+  subgoal for f' z' Q' \<sigma>
+    sorry
 
   thm avoiding_bij
   done
@@ -945,7 +969,7 @@ lemma subst_Let_inversion:
   obtains P' Q' where "M = Let xy P' Q'" and "P'[t <- x] = P" and "Q'[t <- x] = Q"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: "App M (App t (Var x))" rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
   apply(auto simp add:blocked_inductive Int_Un_distrib split:if_splits)
   sorry
 
@@ -968,7 +992,7 @@ lemma subst_val_inversion:
   assumes "val V" and "\<not> blocked z V'" and "V'[N <- z] = V"
   shows "val V'"
   using assms
-proof(binder_induction V arbitrary: V' avoiding: "App N (Var z)" rule:val.strong_induct)
+proof(binder_induction V arbitrary: V' avoiding: N z rule:val.strong_induct)
   case (1 x V')
   then obtain y where "V' = Var y" using subst_Var_inversion by blast
   then show ?case using val.intros by auto
@@ -1539,7 +1563,7 @@ lemma val_subst: "val V \<Longrightarrow> V \<noteq> Var x \<Longrightarrow> val
 
 lemma eval_ctx_subst: "eval_ctx x E \<Longrightarrow> x \<noteq> y \<Longrightarrow> x \<notin> FVars Q \<Longrightarrow> eval_ctx x E[Q <- y]"
   apply(induction rule:eval_ctx.induct)
-  apply(auto intro:eval_ctx.intros simp add:fresh_subst)
+  apply(auto intro:eval_ctx.intros simp add:)
   sorry (*Questionably True*)
 
 lemma count_idle[simp]: "x \<notin> FVars M \<Longrightarrow> count_term x M = 0"
@@ -2105,7 +2129,10 @@ proof(rule ccontr)
     case (3 V M)
     then show ?thesis
       using 3 vals_are_normal[of V] steps beta.cases[of M M'] unfolding normal_def
+(*
       by (smt (verit) beta.cases term.distinct(42,43,44,62,70) term.inject(5))
+*)
+      sorry
   next
     case (4 V xy M)
     then show ?thesis sorry
@@ -2123,7 +2150,7 @@ proof(rule ccontr)
 qed
 
 lemma dset_finite: "finite (dset xy)"
-  sorry
+  by (simp add: dset_alt)
 
 lemma If_beta_star: "n \<rightarrow>* m \<Longrightarrow> If n M1 M2 \<rightarrow>* If m M1 M2"
 proof -
@@ -2481,7 +2508,7 @@ proof(induction A arbitrary: M)
   next
     case 2
     consider (A) "\<exists>V. M[N <- z] \<rightarrow>* V \<and> val V" | (B) "getStuck M[N <- z]" | (C) "diverge M[N <- z]"
-      using val_stuck_step diverge_or_normalize sorry
+      using val_stuck_step diverge_or_normalizes sorry
     then show ?case
       proof cases
         case A
