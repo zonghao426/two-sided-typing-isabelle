@@ -159,7 +159,7 @@ lemma vals_are_normal: "val V \<Longrightarrow> normal V"
 
 lemma num_permute:
   "num n \<Longrightarrow> bij (\<sigma>::'a::var\<Rightarrow>'a) \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> num (permute_term \<sigma> n)"
-  by (induct rule: num.induct) (auto simp: term.permute intro: num.intros)
+  by (induct rule: num.induct) (auto intro: num.intros)
 
 binder_inductive (no_auto_equiv) val
   subgoal premises prems for R B \<sigma> x \<comment> \<open>equivariance\<close>
@@ -187,8 +187,107 @@ thm val.strong_induct
 binder_inductive (no_auto_equiv) beta
   sorry (*TODO: Dmitriy*)
 
+lemma finite_dset: "finite (dset (xy :: 'a::var dpair))"
+  by transfer auto
+
+lemma permute_term_inv:
+  assumes s: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|"
+  shows "permute_term (inv \<sigma>) (permute_term \<sigma> (V::'a::var term)) = V"
+proof -
+  have "inv \<sigma> \<circ> \<sigma> = id" using bij_is_inj[OF s(1)] by (simp add: inj_iff)
+  then show ?thesis
+    by (simp add: term.permute_comp[OF s(1,2) bij_imp_bij_inv[OF s(1)] supp_inv_bound[OF s(1,2)]] term.permute_id)
+qed
+
+lemma num_permute_iff:
+  "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> num (permute_term \<sigma> (V::'a::var term)) = num V"
+  by (metis num_permute permute_term_inv supp_inv_bound bij_imp_bij_inv)
+
+lemma val_permute_iff:
+  "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> val (permute_term \<sigma> (V::'a::var term)) = val V"
+  by (metis val.equiv permute_term_inv supp_inv_bound bij_imp_bij_inv)
+
+lemma is_Fix_permute:
+  "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> is_Fix (permute_term \<sigma> (V::'a::var term)) = is_Fix V"
+  unfolding is_Fix_def
+  by (metis permute_term_inv term.permute(7) bij_imp_bij_inv supp_inv_bound)
+
+lemma is_Pair_permute:
+  "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> is_Pair (permute_term \<sigma> (V::'a::var term)) = is_Pair V"
+  unfolding is_Pair_def
+  by (metis permute_term_inv term.permute(8) bij_imp_bij_inv supp_inv_bound)
+
+lemma stuckEx_equiv_ob:
+  fixes \<sigma> :: "'a::var \<Rightarrow> 'a" and x :: "'a term"
+  assumes "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|"
+    and "(\<exists>V. B = {} \<and> x = Succ V \<and> val V \<and> \<not> num V) \<or>
+         (\<exists>V N P. B = {} \<and> x = term.If V N P \<and> val V \<and> \<not> num V) \<or>
+         (\<exists>V M. B = {} \<and> x = App V M \<and> val V \<and> \<not> is_Fix V) \<or>
+         (\<exists>V xy M. B = dset xy \<and> x = term.Let xy V M \<and> val V \<and> \<not> is_Pair V)"
+  shows "(\<exists>V. \<sigma> ` B = {} \<and> permute_term \<sigma> x = Succ V \<and> val V \<and> \<not> num V) \<or>
+         (\<exists>V N P. \<sigma> ` B = {} \<and> permute_term \<sigma> x = term.If V N P \<and> val V \<and> \<not> num V) \<or>
+         (\<exists>V M. \<sigma> ` B = {} \<and> permute_term \<sigma> x = App V M \<and> val V \<and> \<not> is_Fix V) \<or>
+         (\<exists>V xy M. \<sigma> ` B = dset xy \<and> permute_term \<sigma> x = term.Let xy V M \<and> val V \<and> \<not> is_Pair V)"
+  using assms(3)
+  apply (elim disjE exE)
+  subgoal by (auto simp: assms(1,2) num_permute_iff val_permute_iff is_Fix_permute is_Pair_permute)
+  subgoal by (auto simp: assms(1,2) num_permute_iff val_permute_iff is_Fix_permute is_Pair_permute)
+  subgoal by (auto simp: assms(1,2) num_permute_iff val_permute_iff is_Fix_permute is_Pair_permute)
+  subgoal for V xy M
+    apply (rule disjI2, rule disjI2, rule disjI2)
+    apply (elim conjE)
+    apply (rule exI[of _ "permute_term \<sigma> V"], rule exI[of _ "dmap \<sigma> xy"], rule exI[of _ "permute_term \<sigma> M"])
+    apply (simp add: assms(1,2) dpair.set_map val_permute_iff is_Pair_permute)
+    done
+  done
+
+lemma stuckEx_refresh_ob:
+  fixes x :: "'a::var term"
+  assumes "(\<exists>V. B = {} \<and> x = Succ V \<and> val V \<and> \<not> num V) \<or>
+           (\<exists>V N P. B = {} \<and> x = term.If V N P \<and> val V \<and> \<not> num V) \<or>
+           (\<exists>V M. B = {} \<and> x = App V M \<and> val V \<and> \<not> is_Fix V) \<or>
+           (\<exists>V xy M. B = dset xy \<and> x = term.Let xy V M \<and> val V \<and> \<not> is_Pair V)"
+  shows "\<exists>B'. B' \<inter> FVars x = {} \<and>
+         ((\<exists>V. B' = {} \<and> x = Succ V \<and> val V \<and> \<not> num V) \<or>
+          (\<exists>V N P. B' = {} \<and> x = term.If V N P \<and> val V \<and> \<not> num V) \<or>
+          (\<exists>V M. B' = {} \<and> x = App V M \<and> val V \<and> \<not> is_Fix V) \<or>
+          (\<exists>V xy M. B' = dset xy \<and> x = term.Let xy V M \<and> val V \<and> \<not> is_Pair V))"
+  using assms
+proof (elim disjE exE)
+  fix V assume "B = {} \<and> x = Succ V \<and> val V \<and> \<not> num V"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix V N P assume "B = {} \<and> x = term.If V N P \<and> val V \<and> \<not> num V"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix V M assume "B = {} \<and> x = App V M \<and> val V \<and> \<not> is_Fix V"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix V xy M assume H: "B = dset xy \<and> x = term.Let xy V M \<and> val V \<and> \<not> is_Pair V"
+  then have hx: "x = term.Let xy V M" and hv: "val V" and hp: "\<not> is_Pair V" by auto
+  have b1: "|dset xy| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF finite_dset infinite_UNIV])
+  have b2: "|FVars V \<union> FVars M \<union> dset xy| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) (simp add: finite_dset)
+  obtain \<rho> where r: "bij \<rho>" "|supp \<rho>| <o |UNIV::'a set|"
+      "\<rho> ` dset xy \<inter> (FVars V \<union> FVars M \<union> dset xy) = {}"
+      "id_on (FVars M - dset xy) \<rho>" "\<rho> \<circ> \<rho> = id"
+    using eextend_fresh[OF b1 b2 infinite_UNIV, of "FVars M - dset xy"] by auto
+  have eq: "term.Let xy V M = term.Let (dmap \<rho> xy) V (permute_term \<rho> M)"
+    using r by (auto intro!: exI[of _ \<rho>])
+  have disj: "dset (dmap \<rho> xy) \<inter> FVars x = {}"
+    using r(3) unfolding hx term.set(9) dpair.set_map[OF r(1,2)] by blast
+  show ?thesis
+    apply (rule exI[of _ "dset (dmap \<rho> xy)"], rule conjI[OF disj])
+    apply (rule disjI2, rule disjI2, rule disjI2)
+    apply (rule exI[of _ V], rule exI[of _ "dmap \<rho> xy"], rule exI[of _ "permute_term \<rho> M"])
+    using eq hv hp hx by auto
+qed
+
 binder_inductive (no_auto_equiv) stuckEx
-  sorry
+  subgoal premises prems for R B \<sigma> x by (rule stuckEx_equiv_ob[OF prems(1,2,3)])
+  subgoal premises prems for R B x by (rule stuckEx_refresh_ob[OF prems(3)])
+  done
 
 section \<open>Basic Lemmas\<close>
 
@@ -539,8 +638,119 @@ inductive eval_ctx :: "'var :: var \<Rightarrow> 'var term \<Rightarrow> bool" w
 | "eval_ctx hole E \<Longrightarrow> hole \<notin> FVars N \<Longrightarrow> hole \<notin> dset xy \<Longrightarrow> eval_ctx hole (Let xy E N)"
 | "eval_ctx hole E \<Longrightarrow> hole \<notin> FVars N \<Longrightarrow> hole \<notin> FVars P \<Longrightarrow> eval_ctx hole (If E N P)"
 
+lemma eval_ctx_refresh_ob:
+  fixes x1 :: "'a::var" and x2 :: "'a term"
+  assumes "(\<exists>hole. B = {} \<and> x1 = hole \<and> x2 = Var hole) \<or>
+           (\<exists>hole E M f x. B = {f} \<union> {x} \<and> x1 = hole \<and> x2 = App (Fix f x M) E \<and> R hole E \<and> hole \<notin> FVars M) \<or>
+           (\<exists>hole E N. B = {} \<and> x1 = hole \<and> x2 = App E N \<and> R hole E \<and> hole \<notin> FVars N) \<or>
+           (\<exists>hole E. B = {} \<and> x1 = hole \<and> x2 = Succ E \<and> R hole E) \<or>
+           (\<exists>hole E. B = {} \<and> x1 = hole \<and> x2 = Pred E \<and> R hole E) \<or>
+           (\<exists>hole E N. B = {} \<and> x1 = hole \<and> x2 = term.Pair E N \<and> R hole E \<and> hole \<notin> FVars N) \<or>
+           (\<exists>V hole E. B = {} \<and> x1 = hole \<and> x2 = term.Pair V E \<and> val V \<and> R hole E \<and> hole \<notin> FVars V) \<or>
+           (\<exists>hole E N xy. B = dset xy \<and> x1 = hole \<and> x2 = term.Let xy E N \<and> R hole E \<and> hole \<notin> FVars N \<and> hole \<notin> dset xy) \<or>
+           (\<exists>hole E N P. B = {} \<and> x1 = hole \<and> x2 = term.If E N P \<and> R hole E \<and> hole \<notin> FVars N \<and> hole \<notin> FVars P)"
+  shows "\<exists>B'. B' \<inter> ({x1} \<union> FVars x2) = {} \<and>
+         ((\<exists>hole. B' = {} \<and> x1 = hole \<and> x2 = Var hole) \<or>
+          (\<exists>hole E M f x. B' = {f} \<union> {x} \<and> x1 = hole \<and> x2 = App (Fix f x M) E \<and> R hole E \<and> hole \<notin> FVars M) \<or>
+          (\<exists>hole E N. B' = {} \<and> x1 = hole \<and> x2 = App E N \<and> R hole E \<and> hole \<notin> FVars N) \<or>
+          (\<exists>hole E. B' = {} \<and> x1 = hole \<and> x2 = Succ E \<and> R hole E) \<or>
+          (\<exists>hole E. B' = {} \<and> x1 = hole \<and> x2 = Pred E \<and> R hole E) \<or>
+          (\<exists>hole E N. B' = {} \<and> x1 = hole \<and> x2 = term.Pair E N \<and> R hole E \<and> hole \<notin> FVars N) \<or>
+          (\<exists>V hole E. B' = {} \<and> x1 = hole \<and> x2 = term.Pair V E \<and> val V \<and> R hole E \<and> hole \<notin> FVars V) \<or>
+          (\<exists>hole E N xy. B' = dset xy \<and> x1 = hole \<and> x2 = term.Let xy E N \<and> R hole E \<and> hole \<notin> FVars N \<and> hole \<notin> dset xy) \<or>
+          (\<exists>hole E N P. B' = {} \<and> x1 = hole \<and> x2 = term.If E N P \<and> R hole E \<and> hole \<notin> FVars N \<and> hole \<notin> FVars P))"
+  using assms
+proof (elim disjE exE)
+  fix hole assume "B = {} \<and> x1 = hole \<and> x2 = Var hole"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix hole E M f x assume H: "B = {f} \<union> {x} \<and> x1 = hole \<and> x2 = App (Fix f x M) E \<and> R hole E \<and> hole \<notin> FVars M"
+  then have hx1: "x1 = hole" and hx2: "x2 = App (Fix f x M) E" and hR: "R hole E" and hf: "hole \<notin> FVars M" by auto
+  have b1: "|{f} \<union> {x}| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+  have b2: "|{hole} \<union> FVars M \<union> FVars E \<union> {f} \<union> {x}| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+  obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+      "g ` ({f} \<union> {x}) \<inter> ({hole} \<union> FVars M \<union> FVars E \<union> {f} \<union> {x}) = {}"
+      "id_on (FVars M - ({f} \<union> {x})) g" "g \<circ> g = id"
+    using eextend_fresh[OF b1 b2 infinite_UNIV, of "FVars M - ({f} \<union> {x})"] by auto
+  have eq: "Fix f x M = Fix (g f) (g x) (permute_term g M)"
+    using g by (auto intro!: exI[of _ g])
+  have holeM: "hole \<notin> FVars (permute_term g M)"
+  proof
+    assume "hole \<in> FVars (permute_term g M)"
+    then obtain y where y: "y \<in> FVars M" "g y = hole" unfolding term.FVars_permute[OF g(1,2)] by auto
+    show False
+    proof (cases "y \<in> {f} \<union> {x}")
+      case True then show False using g(3) y(2) by auto
+    next
+      case False then have "g y = y" using g(4) y(1) unfolding id_on_def by auto
+      then show False using y hf by auto
+    qed
+  qed
+  have disj: "({g f} \<union> {g x}) \<inter> ({x1} \<union> FVars x2) = {}"
+    using g(3) unfolding hx1 hx2 term.set(6,7) by auto
+  show ?thesis
+    apply (rule exI[of _ "{g f} \<union> {g x}"], rule conjI[OF disj])
+    apply (rule disjI2, rule disjI1)
+    apply (rule exI[of _ hole], rule exI[of _ E], rule exI[of _ "permute_term g M"], rule exI[of _ "g f"], rule exI[of _ "g x"])
+    using hx1 hx2 eq hR holeM by auto
+next
+  fix hole E N assume "B = {} \<and> x1 = hole \<and> x2 = App E N \<and> R hole E \<and> hole \<notin> FVars N"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix hole E assume "B = {} \<and> x1 = hole \<and> x2 = Succ E \<and> R hole E"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix hole E assume "B = {} \<and> x1 = hole \<and> x2 = Pred E \<and> R hole E"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix hole E N assume "B = {} \<and> x1 = hole \<and> x2 = term.Pair E N \<and> R hole E \<and> hole \<notin> FVars N"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix V hole E assume "B = {} \<and> x1 = hole \<and> x2 = term.Pair V E \<and> val V \<and> R hole E \<and> hole \<notin> FVars V"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix hole E N xy assume H: "B = dset xy \<and> x1 = hole \<and> x2 = term.Let xy E N \<and> R hole E \<and> hole \<notin> FVars N \<and> hole \<notin> dset xy"
+  then have hx1: "x1 = hole" and hx2: "x2 = term.Let xy E N" and hR: "R hole E"
+    and hfN: "hole \<notin> FVars N" and hfd: "hole \<notin> dset xy" by auto
+  have b1: "|dset xy| <o |UNIV::'a set|" by (rule finite_ordLess_infinite2[OF finite_dset infinite_UNIV])
+  have b2: "|{hole} \<union> FVars E \<union> FVars N \<union> dset xy| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) (simp add: finite_dset)
+  obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+      "g ` dset xy \<inter> ({hole} \<union> FVars E \<union> FVars N \<union> dset xy) = {}"
+      "id_on (FVars N - dset xy) g" "g \<circ> g = id"
+    using eextend_fresh[OF b1 b2 infinite_UNIV, of "FVars N - dset xy"] by auto
+  have eq: "term.Let xy E N = term.Let (dmap g xy) E (permute_term g N)"
+    using g by (auto intro!: exI[of _ g])
+  have holed: "hole \<notin> dset (dmap g xy)" using g(3) unfolding dpair.set_map[OF g(1,2)] by auto
+  have holeN: "hole \<notin> FVars (permute_term g N)"
+  proof
+    assume "hole \<in> FVars (permute_term g N)"
+    then obtain y where y: "y \<in> FVars N" "g y = hole" unfolding term.FVars_permute[OF g(1,2)] by auto
+    show False
+    proof (cases "y \<in> dset xy")
+      case True then show False using g(3) y(2) by auto
+    next
+      case False then have "g y = y" using g(4) y(1) unfolding id_on_def by auto
+      then show False using y hfN by auto
+    qed
+  qed
+  have disj: "dset (dmap g xy) \<inter> ({x1} \<union> FVars x2) = {}"
+    using g(3) unfolding hx1 hx2 term.set(9) dpair.set_map[OF g(1,2)] by auto
+  show ?thesis
+    apply (rule exI[of _ "dset (dmap g xy)"], rule conjI[OF disj])
+    apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1)
+    apply (rule exI[of _ hole], rule exI[of _ E], rule exI[of _ "permute_term g N"], rule exI[of _ "dmap g xy"])
+    using hx1 hx2 eq hR holeN holed by auto
+next
+  fix hole E N P assume "B = {} \<and> x1 = hole \<and> x2 = term.If E N P \<and> R hole E \<and> hole \<notin> FVars N \<and> hole \<notin> FVars P"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+qed
+
 binder_inductive eval_ctx
-  sorry
+  subgoal premises prems for R B x1 x2 by (rule eval_ctx_refresh_ob[OF prems(3)])
+  done
 
 lemma eval_ctx_strong_induct[consumes 1]: "eval_ctx (x1 :: 'a) x2 \<Longrightarrow>
 (\<And>p. |K p :: 'a set| <o |UNIV :: 'a :: var set| ) \<Longrightarrow>
@@ -680,7 +890,7 @@ proof (erule exE)+
     using exists_fresh[OF ordLess_ordLeq_trans[OF term.set_bd var_class.large'], where ?x3="App M E"]
     by auto
   moreover obtain E' where "E' = App (Fix f x M) E[Var hole'<-hole]" by simp
-  ultimately have "eval_ctx hole' E'" using eval_subst[of hole E hole'] eval_ctx.intros
+  ultimately have "eval_ctx hole' E'" using eval_subst[of hole E hole'] eval_ctx.intros(2)
     by (metis Un_iff term.set(6))
   have "App (Fix f x M) N = E'[Var z <- hole']" 
     using subst_subst \<open>E' = App (Fix f x M) E[Var hole' <- hole]\<close> \<open>N = E[Var z <- hole]\<close>
@@ -1007,17 +1217,17 @@ next
   obtain V1' V2' where "V' = Pair V1' V2'" and "V1'[N <- z] = V1" and "V2'[N <- z] = V2"
     using \<open>\<not> blocked z V'\<close>  subst_Pair_inversion 3 blocked_inductive(1) by blast
   then have "\<not> blocked z V1'"
-    using blocked_inductive \<open>\<not> blocked z V'\<close> by metis
+    using blocked_inductive(6) \<open>\<not> blocked z V'\<close> by metis
   then have "val V1'" using \<open>V1'[N <- z] = V1\<close> "3.IH"(1)[of V1'] by auto
   then have "\<not> blocked z V2'"
-    using blocked_inductive \<open>\<not> blocked z V'\<close> \<open>V' = term.Pair V1' V2'\<close> by metis
+    using blocked_inductive(7) \<open>\<not> blocked z V'\<close> \<open>V' = term.Pair V1' V2'\<close> by metis
   then have "val V2'" using \<open>V2'[N <- z] = V2\<close> "3.IH"(2)[of V2'] by auto
   show ?case using \<open>val V1'\<close> \<open>val V2'\<close> \<open>V' = Pair V1' V2'\<close> val.intros by auto
 next
   case (4 f x M V')
   then obtain M' where "V' = Fix f x M'" and "M'[N <- z] = M"
     using subst_Fix_inversion[of V' N z f x M] blocked_inductive(1)
-    by (metis Un_empty_right Un_insert_right insertCI insert_disjoint(2) term.set(5,6))
+    by (metis Un_empty_right Un_insert_right insertCI insert_disjoint(2))
   then show ?case using val.intros by auto
 qed
 
@@ -1134,7 +1344,7 @@ next
   then obtain Q1 Q2 where "M = Pair Q1 Q2" and "E[P <- x] = Q1[N <- z]" and "Q = Q2[N <- z]"
     using subst_Pair_inversion 6 blocked_inductive(1) by metis
   moreover from \<open>\<not> blocked z M\<close> have "\<not> blocked z Q1" 
-    using blocked_inductive \<open>M = Pair Q1 Q2\<close> by metis
+    using blocked_inductive(6) \<open>M = Pair Q1 Q2\<close> by metis
   ultimately obtain E' P' where "E'[N <- z] = E" and "P'[N <- z] = P" and "Q1 = E'[P' <- x]" and "eval_ctx x E'"
     using 6(2)[where M = Q] 6 by fastforce
    moreover have "x \<notin> FVars Q2"
@@ -1142,7 +1352,7 @@ next
     by simp
   ultimately have "M = (Pair E' Q2)[P' <- x] \<and> Pair E Q = (Pair E' Q2)[N <- z] \<and> P = P'[N <- z]"
     by (simp add: \<open>M = term.Pair Q1 Q2\<close> \<open>Q = Q2[N <- z]\<close>)
-  also have "eval_ctx x (Pair E' Q2)" using \<open>eval_ctx x E'\<close> \<open>x \<notin> FVars Q2\<close> eval_ctx.intros by metis
+  also have "eval_ctx x (Pair E' Q2)" using \<open>eval_ctx x E'\<close> \<open>x \<notin> FVars Q2\<close> eval_ctx.intros(6) by metis
   ultimately show ?case by blast
 next
   case (7 V x E p M)
@@ -1162,7 +1372,7 @@ next
     by simp
   ultimately have "M = (Pair V' E')[P' <- x] \<and> Pair V E = (Pair V' E')[N <- z] \<and> P = P'[N <- z]"
     using \<open>M = term.Pair V' Q\<close> \<open>V = V'[N <- z]\<close> \<open>Q = E'[P' <- x]\<close> by simp
-  also have "eval_ctx x (Pair V' E')" using \<open>eval_ctx x E'\<close> \<open>x \<notin> FVars V'\<close> \<open>val V'\<close> eval_ctx.intros by metis
+  also have "eval_ctx x (Pair V' E')" using \<open>eval_ctx x E'\<close> \<open>x \<notin> FVars V'\<close> \<open>val V'\<close> eval_ctx.intros(7) by metis
   ultimately show ?case by blast
 next
   case (8 hole E Q x p M)
@@ -1208,7 +1418,7 @@ next
     by auto
   ultimately have "M = (If E' Q1' Q2')[P' <- x] \<and> (If E Q1 Q2) = (If E' Q1' Q2')[N <- z] \<and> P = P'[N <- z]"
     using \<open>M = If Q0 Q1' Q2'\<close> \<open>Q1 = Q1'[N <- z]\<close> \<open>Q2 = Q2'[N <- z]\<close> \<open>Q0 = E'[P' <- x]\<close> by simp
-  also have "eval_ctx x (If E' Q1' Q2')" using q1 q2 ctxxE eval_ctx.intros by metis
+  also have "eval_ctx x (If E' Q1' Q2')" using q1 q2 ctxxE eval_ctx.intros(9) by metis
   ultimately show ?case by blast
 qed
 
@@ -1269,7 +1479,7 @@ proof (binder_induction P1 P2 avoiding: z N M rule:beta.strong_induct[unfolded U
     then have "M[N <- z] = If Zero P2 Q" by simp
     then obtain Q0 Q1 Q2
       where "M = If Q0 Q1 Q2" and "Q0[N <- z] = Zero" and "Q1[N <- z] = P2" and "Q2[N <- z] = Q"  and "\<not> blocked z Q0"
-      using  \<open>\<not> blocked z M\<close> subst_If_inversion[of M N z Zero P2 Q] blocked_inductive by metis
+      using  \<open>\<not> blocked z M\<close> subst_If_inversion[of M N z Zero P2 Q] blocked_inductive(1,9) by metis
     then have "Q0 = Zero"
       using subst_Zero_inversion blocked_inductive(1) by blast
     then show ?case
@@ -1279,7 +1489,7 @@ proof (binder_induction P1 P2 avoiding: z N M rule:beta.strong_induct[unfolded U
     then have "M[N <- z] = term.If (Succ Q) Q1 P2" by simp
     then obtain Q0' Q1' Q2'
       where "M = If Q0' Q1' Q2'" and "Q0'[N <- z] = (Succ Q)" and "Q1'[N <- z] = Q1" and "Q2'[N <- z] = P2"  and "\<not> blocked z Q0'"
-      using  \<open>\<not> blocked z M\<close> subst_If_inversion[of M N z "Succ Q" Q1 P2] blocked_inductive by metis
+      using  \<open>\<not> blocked z M\<close> subst_If_inversion[of M N z "Succ Q" Q1 P2] blocked_inductive(1,9) by metis
     then have "Q0' = Succ Q"
        using 11(1) num.intros(2) subst_num_inversion by blast
      then show ?case
@@ -1416,7 +1626,7 @@ next
     using \<open>\<not> blocked z M\<close> subst_Pair_inversion[of M N z V "E[P1 <- hole]"] blocked_inductive(1) by blast
   then have "val V'" using 7(1) \<open>\<not> blocked z M\<close> blocked_inductive(6) subst_val_inversion
     by metis
-  then have "\<not> blocked z Q" using blocked_inductive \<open>\<not> blocked z M\<close> \<open>M = Pair V' Q\<close> by metis
+  then have "\<not> blocked z Q" using blocked_inductive(7) \<open>\<not> blocked z M\<close> \<open>M = Pair V' Q\<close> by metis
   then obtain Q' where "Q \<rightarrow> Q'" and "Q'[N <- z] = E[P2 <- hole]"
     using \<open>P1 \<rightarrow> P2\<close> \<open>Q[N <- z] = E[P1 <- hole]\<close> "7"(3)[of _ Q] by blast
   have "(Pair V' Q')[N <- z] = (Pair V E)[P2 <- hole]"
@@ -1453,7 +1663,7 @@ next
   then obtain Q0' Q1' Q2' 
     where "M = If Q0' Q1' Q2'" and "Q0'[N <- z] = E[P1 <- hole]" and "Q1'[N <- z] = Q1" and "Q2'[N <- z] = Q2"
     using \<open>\<not> blocked z M\<close> subst_If_inversion[of M N z "E[P1 <- hole]" Q1 Q2] blocked_inductive(1) by blast
-  then have "\<not> blocked z Q0'" using blocked_inductive \<open>\<not> blocked z M\<close> \<open>M = If Q0' Q1' Q2'\<close> by metis
+  then have "\<not> blocked z Q0'" using blocked_inductive(9) \<open>\<not> blocked z M\<close> \<open>M = If Q0' Q1' Q2'\<close> by metis
   then obtain Q where "Q0' \<rightarrow> Q" and "Q[N <- z] = E[P2 <- hole]"
     using \<open>P1 \<rightarrow> P2\<close> \<open>Q0'[N <- z] = E[P1 <- hole]\<close> 9(2)[of _ Q0'] by blast
   have "(If Q Q1' Q2')[N <- z] = (If E Q1 Q2)[P2 <- hole]"
@@ -1647,7 +1857,7 @@ next
   case (OrdPair2 V Na N')
   then have "\<not> blocked z Na" using 
       blocked_inductive by fast
-  have "\<not> blocked z V" using \<open>\<not> blocked z (Pair V Na)\<close> blocked_inductive by metis
+  have "\<not> blocked z V" using \<open>\<not> blocked z (Pair V Na)\<close> blocked_inductive(6) by metis
   then have "val V[Q <- z]" using \<open>val V\<close> sorry
   then show ?case using OrdPair2 beta.intros(6) \<open>\<not> blocked z Na\<close> by auto
 next
@@ -1845,7 +2055,7 @@ lemma Pair_div: "diverge M \<Longrightarrow> diverge (Pair M N)"
 proof(coinduction arbitrary: M N rule:diverge.coinduct)
   case diverge
   then obtain M' where "Pair M N \<rightarrow> Pair M' N" and "diverge M'" 
-    using diverge.cases beta.intros by metis
+    using diverge.cases beta.intros(5) by metis
   then show ?case by auto
 qed
 
@@ -1995,7 +2205,7 @@ next
       then have "W'[P <- z] \<rightarrow>* n"                             
         using \<open>W'[P <- z] \<rightarrow>* W\<close> by blast
       then have "M[P <- z] \<rightarrow>* (Succ n)"
-        using \<open>M[P <- z] \<rightarrow>* U[P <- z]\<close> \<open>U = Succ W'\<close> eval_ctx.intros(1,4)
+        using \<open>M[P <- z] \<rightarrow>* U[P <- z]\<close> \<open>U = Succ W'\<close>
         using beta_star_def betas_path_sum Succ_beta_star
         by (metis usubst_simps(2))
       then have "val (Succ n) \<and> M[P <- z] \<rightarrow>* (Succ n) \<and> b5_prop (Succ n) (Succ n) P N z"
@@ -2169,8 +2379,8 @@ lemma App_beta_star: "V \<rightarrow>* V' \<Longrightarrow> App V M \<rightarrow
 proof -
   assume "V \<rightarrow>* V'"
   obtain x :: 'a where "eval_ctx x (App (Var x) M)" and "x \<notin> FVars M"
-    using eval_ctx.intros
-    by (metis UnCI arb_element finite_FVars term.set(8))
+    using eval_ctx.intros(1,3)
+    by (metis arb_element finite_FVars)
   then show ?thesis 
     using eval_ctx_beta_star[of x "App (Var x) M" V V'] \<open>V \<rightarrow>* V'\<close>
     by auto
