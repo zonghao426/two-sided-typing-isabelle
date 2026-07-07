@@ -113,10 +113,20 @@ inductive beta :: "'var::var term \<Rightarrow> 'var::var term \<Rightarrow> boo
 | OrdIf: "M \<rightarrow> M' \<Longrightarrow> If M N P \<rightarrow> If M' N P"
 | Ifz : "If Zero N P \<rightarrow> N"
 | Ifs : "num n \<Longrightarrow> If (Succ n) N P \<rightarrow> P"
-| Let : "val V \<Longrightarrow> val W \<Longrightarrow> Let xy (Pair V W) M \<rightarrow> M[V <- dfst xy][W <- dsnd xy]"
+| Let : "val V \<Longrightarrow> val W \<Longrightarrow> dset xy \<inter> FVars V = {} \<Longrightarrow> Let xy (Pair V W) M \<rightarrow> M[V <- dfst xy][W <- dsnd xy]"
 | PredZ: "Pred Zero \<rightarrow> Zero"
 | PredS: "num n \<Longrightarrow> Pred (Succ n) \<rightarrow> n"
-| FixBeta: "val V \<Longrightarrow> App (Fix f x M) V \<rightarrow> M[V <- x][Fix f x M <- f]"
+| FixBeta: "val V \<Longrightarrow> f \<notin> FVars V \<Longrightarrow> App (Fix f x M) V \<rightarrow> M[V <- x][Fix f x M <- f]"
+text \<open>NB: the freshness side conditions on @{text Let} and @{text FixBeta} are ESSENTIAL. The paper's
+  (Fix\<beta>) rule uses simultaneous substitution @{text "M[V/x, fix f(x).M/f]"} under the implicit
+  alpha-convention that the bound names are fresh for @{text V}. The sequential
+  @{text "M[V <- x][Fix f x M <- f]"} equals it only when @{text "f \<notin> FVars V"}: otherwise the second
+  substitution captures the @{text f}-occurrences inside the inserted @{text V}-copies. Without the
+  side condition the relation is provably NON-deterministic (e.g. @{text "App (Fix f x (Var x)) (Pair (Var f) Zero)"}
+  reduces both to @{text "Pair (Fix f x (Var x)) Zero"} and, via the alpha-equal representative
+  @{text "Fix g x (Var x)"}, to @{text "Pair (Var f) Zero"}), and the binder_inductive refreshability
+  obligation is false. Same for the @{text dsnd}-capture in @{text Let}. The side conditions do not
+  restrict the relation up to alpha: binders can always be renamed to satisfy them.\<close>
 
 inductive betas :: "'var::var term \<Rightarrow> nat \<Rightarrow> 'var::var term \<Rightarrow> bool"  ("_ \<rightarrow>[_] _" [70, 0, 70] 70) where
   refl: "M \<rightarrow>[0] M"
@@ -453,10 +463,10 @@ abbreviation (input) beta_D where
     (\<exists>M M' N P. B = {} \<and> x1 = term.If M N P \<and> x2 = term.If M' N P \<and> R M M') \<or>
     (\<exists>N P. B = {} \<and> x1 = term.If Zero N P \<and> x2 = N) \<or>
     (\<exists>n N P. B = {} \<and> x1 = term.If (Succ n) N P \<and> x2 = P \<and> num n) \<or>
-    (\<exists>V W xy M. B = dset xy \<and> x1 = term.Let xy (term.Pair V W) M \<and> x2 = M[V <- dfst xy][W <- dsnd xy] \<and> val V \<and> val W) \<or>
+    (\<exists>V W xy M. B = dset xy \<and> x1 = term.Let xy (term.Pair V W) M \<and> x2 = M[V <- dfst xy][W <- dsnd xy] \<and> val V \<and> val W \<and> dset xy \<inter> FVars V = {}) \<or>
     (B = {} \<and> x1 = Pred Zero \<and> x2 = Zero) \<or>
     (\<exists>n. B = {} \<and> x1 = Pred (Succ n) \<and> x2 = n \<and> num n) \<or>
-    (\<exists>V f x M. B = {f} \<union> {x} \<and> x1 = App (Fix f x M) V \<and> x2 = M[V <- x][Fix f x M <- f] \<and> val V)"
+    (\<exists>V f x M. B = {f} \<union> {x} \<and> x1 = App (Fix f x M) V \<and> x2 = M[V <- x][Fix f x M <- f] \<and> val V \<and> f \<notin> FVars V)"
 
 lemma beta_equiv_ob:
   assumes s: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a::var set|"
@@ -464,7 +474,8 @@ lemma beta_equiv_ob:
   shows "beta_D (\<lambda>a b. R (permute_term (inv \<sigma>) a) (permute_term (inv \<sigma>) b)) (permute_term \<sigma> x1) (permute_term \<sigma> x2) (\<sigma> ` B)"
   supply SET[simp] = s term.permute[OF s(1) s(2)] permute_term_inv[OF s] image_Un
       permute_usubst[OF s] dfst_dmap[OF s(1)] dsnd_dmap[OF s(1)] dpair.set_map[OF s(1)]
-      val_permute_iff[OF s] num_permute_iff[OF s]
+      val_permute_iff[OF s] num_permute_iff[OF s] term.FVars_permute[OF s(1) s(2)]
+      inj_image_mem_iff[OF bij_is_inj[OF s(1)]] image_Int[OF bij_is_inj[OF s(1)], symmetric]
   using D
   apply (elim disjE exE conjE)
   subgoal for N N' f x M by (rule disjI1, rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ "permute_term \<sigma> N'"], rule exI[of _ "\<sigma> f"], rule exI[of _ "\<sigma> x"], rule exI[of _ "permute_term \<sigma> M"]) auto
@@ -483,12 +494,154 @@ lemma beta_equiv_ob:
   subgoal for V f x M by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule exI[of _ "permute_term \<sigma> V"], rule exI[of _ "\<sigma> f"], rule exI[of _ "\<sigma> x"], rule exI[of _ "permute_term \<sigma> M"]) auto
   done
 
+lemma beta_refresh_ob:
+  fixes x1 x2 :: "'a::var term"
+  assumes "beta_D R x1 x2 B"
+  shows "\<exists>B'. B' \<inter> (FVars x1 \<union> FVars x2) = {} \<and> beta_D R x1 x2 B'"
+  using assms
+proof (elim disjE exE)
+  fix N N' f x M
+  assume H: "B = {f} \<union> {x} \<and> x1 = App (Fix f x M) N \<and> x2 = App (Fix f x M) N' \<and> R N N'"
+  then have hx1: "x1 = App (Fix f x M) N" and hx2: "x2 = App (Fix f x M) N'" and hR: "R N N'" by auto
+  have b1: "|{f} \<union> {x}| <o |UNIV::'a set|" by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+  have b2: "|FVars M \<union> FVars x1 \<union> FVars x2 \<union> {f} \<union> {x}| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+  obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+      "g ` ({f} \<union> {x}) \<inter> (FVars M \<union> FVars x1 \<union> FVars x2 \<union> {f} \<union> {x}) = {}"
+      "id_on (FVars M - ({f} \<union> {x})) g" "g \<circ> g = id"
+    using eextend_fresh[OF b1 b2 infinite_UNIV, of "FVars M - ({f} \<union> {x})"] by auto
+  have eq: "Fix f x M = Fix (g f) (g x) (permute_term g M)"
+    using g by (auto intro!: exI[of _ g])
+  have disj: "({g f} \<union> {g x}) \<inter> (FVars x1 \<union> FVars x2) = {}" using g(3) by auto
+  show ?thesis
+    apply (rule exI[of _ "{g f} \<union> {g x}"], rule conjI[OF disj], rule disjI1)
+    apply (rule exI[of _ N], rule exI[of _ N'], rule exI[of _ "g f"], rule exI[of _ "g x"], rule exI[of _ "permute_term g M"])
+    using hx1 hx2 eq hR by auto
+next
+  fix M M' N assume "B = {} \<and> x1 = App M N \<and> x2 = App M' N \<and> R M M'"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix M M' assume "B = {} \<and> x1 = Succ M \<and> x2 = Succ M' \<and> R M M'"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix M M' assume "B = {} \<and> x1 = Pred M \<and> x2 = Pred M' \<and> R M M'"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix M M' N assume "B = {} \<and> x1 = term.Pair M N \<and> x2 = term.Pair M' N \<and> R M M'"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix V N N' assume "B = {} \<and> x1 = term.Pair V N \<and> x2 = term.Pair V N' \<and> val V \<and> R N N'"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix M M' xy N
+  assume H: "B = dset xy \<and> x1 = term.Let xy M N \<and> x2 = term.Let xy M' N \<and> R M M'"
+  then have hx1: "x1 = term.Let xy M N" and hx2: "x2 = term.Let xy M' N" and hR: "R M M'" by auto
+  have b1: "|dset xy| <o |UNIV::'a set|" by (rule finite_ordLess_infinite2[OF finite_dset infinite_UNIV])
+  have b2: "|FVars N \<union> FVars x1 \<union> FVars x2 \<union> dset xy| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) (simp add: finite_dset)
+  obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+      "g ` dset xy \<inter> (FVars N \<union> FVars x1 \<union> FVars x2 \<union> dset xy) = {}"
+      "id_on (FVars N - dset xy) g" "g \<circ> g = id"
+    using eextend_fresh[OF b1 b2 infinite_UNIV, of "FVars N - dset xy"] by auto
+  have eq1: "term.Let xy M N = term.Let (dmap g xy) M (permute_term g N)"
+    using g by (auto intro!: exI[of _ g])
+  have eq2: "term.Let xy M' N = term.Let (dmap g xy) M' (permute_term g N)"
+    using g by (auto intro!: exI[of _ g])
+  have disj: "dset (dmap g xy) \<inter> (FVars x1 \<union> FVars x2) = {}"
+    using g(3) unfolding dpair.set_map[OF g(1) g(2)] by blast
+  show ?thesis
+    apply (rule exI[of _ "dset (dmap g xy)"], rule conjI[OF disj])
+    apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1)
+    apply (rule exI[of _ M], rule exI[of _ M'], rule exI[of _ "dmap g xy"], rule exI[of _ "permute_term g N"])
+    using hx1 hx2 eq1 eq2 hR by auto
+next
+  fix M M' N P assume "B = {} \<and> x1 = term.If M N P \<and> x2 = term.If M' N P \<and> R M M'"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix N P assume "B = {} \<and> x1 = term.If Zero N P \<and> x2 = N"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix n N P assume "B = {} \<and> x1 = term.If (Succ n) N P \<and> x2 = P \<and> num n"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix V W xy M
+  assume H: "B = dset xy \<and> x1 = term.Let xy (term.Pair V W) M \<and> x2 = M[V <- dfst xy][W <- dsnd xy] \<and> val V \<and> val W \<and> dset xy \<inter> FVars V = {}"
+  then have hx1: "x1 = term.Let xy (term.Pair V W) M" and hx2: "x2 = M[V <- dfst xy][W <- dsnd xy]"
+    and hV: "val V" and hW: "val W" and hfr: "dset xy \<inter> FVars V = {}" by auto
+  have b1: "|dset xy| <o |UNIV::'a set|" by (rule finite_ordLess_infinite2[OF finite_dset infinite_UNIV])
+  have b2: "|FVars M \<union> FVars x1 \<union> FVars x2 \<union> dset xy| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) (simp add: finite_dset)
+  obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+      "g ` dset xy \<inter> (FVars M \<union> FVars x1 \<union> FVars x2 \<union> dset xy) = {}"
+      "id_on (FVars M - dset xy) g" "g \<circ> g = id"
+    using eextend_fresh[OF b1 b2 infinite_UNIV, of "FVars M - dset xy"] by auto
+  have eq: "term.Let xy (term.Pair V W) M = term.Let (dmap g xy) (term.Pair V W) (permute_term g M)"
+    using g by (auto intro!: exI[of _ g])
+  have fr': "dsnd xy \<notin> FVars V" using hfr dsel_dset(2) by blast
+  have gfr: "g (dsnd xy) \<notin> FVars V"
+    using g(3) dsel_dset(2) unfolding hx1 term.set by blast
+  have subst_eq: "(permute_term g M)[V <- dfst (dmap g xy)][W <- dsnd (dmap g xy)] = M[V <- dfst xy][W <- dsnd xy]"
+    unfolding dfst_dmap[OF g(1)] dsnd_dmap[OF g(1)]
+    apply (rule premute_term_usubst2[OF g(1) g(2)])
+    subgoal using g(4) unfolding id_on_def dset_alt by auto
+    subgoal using fr' gfr by auto
+    done
+  have side: "dset (dmap g xy) \<inter> FVars V = {}"
+    using g(3) unfolding dpair.set_map[OF g(1) g(2)] hx1 term.set by blast
+  have disj: "dset (dmap g xy) \<inter> (FVars x1 \<union> FVars x2) = {}"
+    using g(3) unfolding dpair.set_map[OF g(1) g(2)] by blast
+  show ?thesis
+    apply (rule exI[of _ "dset (dmap g xy)"], rule conjI[OF disj])
+    apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1)
+    apply (rule exI[of _ V], rule exI[of _ W], rule exI[of _ "dmap g xy"], rule exI[of _ "permute_term g M"])
+    using hx1 hx2 eq subst_eq hV hW side by auto
+next
+  assume "B = {} \<and> x1 = Pred Zero \<and> x2 = Zero"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix n assume "B = {} \<and> x1 = Pred (Succ n) \<and> x2 = n \<and> num n"
+  then show ?thesis by (intro exI[of _ "{}"]) auto
+next
+  fix V f x M
+  assume H: "B = {f} \<union> {x} \<and> x1 = App (Fix f x M) V \<and> x2 = M[V <- x][Fix f x M <- f] \<and> val V \<and> f \<notin> FVars V"
+  then have hx1: "x1 = App (Fix f x M) V" and hx2: "x2 = M[V <- x][Fix f x M <- f]"
+    and hV: "val V" and hfr: "f \<notin> FVars V" by auto
+  have b1: "|{f} \<union> {x}| <o |UNIV::'a set|" by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+  have b2: "|FVars M \<union> FVars x1 \<union> FVars x2 \<union> {f} \<union> {x}| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+  obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+      "g ` ({f} \<union> {x}) \<inter> (FVars M \<union> FVars x1 \<union> FVars x2 \<union> {f} \<union> {x}) = {}"
+      "id_on (FVars M - ({f} \<union> {x})) g" "g \<circ> g = id"
+    using eextend_fresh[OF b1 b2 infinite_UNIV, of "FVars M - ({f} \<union> {x})"] by auto
+  have eq: "Fix f x M = Fix (g f) (g x) (permute_term g M)"
+    using g by (auto intro!: exI[of _ g])
+  have gfr: "g f \<notin> FVars V"
+    using g(3) unfolding hx1 term.set by auto
+  have subst_eq: "(permute_term g M)[V <- g x][Fix f x M <- g f] = M[V <- x][Fix f x M <- f]"
+    apply (rule premute_term_usubst2[OF g(1) g(2)])
+    subgoal using g(4) unfolding id_on_def by auto
+    subgoal using hfr gfr by auto
+    done
+  have disj: "({g f} \<union> {g x}) \<inter> (FVars x1 \<union> FVars x2) = {}" using g(3) by auto
+  have px1: "x1 = App (Fix (g f) (g x) (permute_term g M)) V"
+    unfolding hx1 eq[symmetric] by simp
+  have px2: "x2 = (permute_term g M)[V <- g x][Fix (g f) (g x) (permute_term g M) <- g f]"
+    unfolding eq[symmetric] hx2 subst_eq by simp
+  show ?thesis
+    apply (rule exI[of _ "{g f} \<union> {g x}"], rule conjI[OF disj])
+    apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2)
+    apply (rule exI[of _ V], rule exI[of _ "g f"], rule exI[of _ "g x"], rule exI[of _ "permute_term g M"])
+    using px1 px2 hV gfr by auto
+qed
+
 binder_inductive (no_auto_equiv) beta
   subgoal premises prems for R B \<sigma> x1 x2 by (rule beta_equiv_ob[OF prems(1) prems(2) prems(3)])
-  subgoal premises prems for R B x1 x2 sorry
+  subgoal premises prems for R B x1 x2 by (rule beta_refresh_ob[OF prems(3)])
   done
 
-lemma beta_deterministic: "M \<rightarrow> N \<Longrightarrow> M \<rightarrow> N' \<Longrightarrow> N = N'"
+lemma beta_deterministic:
+  fixes M :: "'a::var term"
+  shows "M \<rightarrow> N \<Longrightarrow> M \<rightarrow> N' \<Longrightarrow> N = N'"
   apply(binder_induction M N arbitrary: N' avoiding: M N N' rule: beta.strong_induct)
   subgoal premises prems for M N f x Q N' using prems(6)
     apply - 
@@ -548,19 +701,39 @@ lemma beta_deterministic: "M \<rightarrow> N \<Longrightarrow> M \<rightarrow> N
     apply (auto elim:beta.cases)
     using normal_def num.intros(2) nums_are_normal apply blast
     done
-  subgoal premises prems for V W xy M N' using prems(6)
-    apply - 
-    apply(erule beta.cases)
-                 apply(auto simp add: prems(1-5) dset_alt simp del: term.inject elim:beta.cases)
-    apply (auto) []
-    using normal_def prems(4,5) val.intros(3) vals_are_normal apply blast
-    apply (subst (asm) Let_fresh_inject[of "FVars V \<union> FVars W"])
-    apply auto
-    apply (rule premute_term_usubst2[symmetric]; simp?)
-    apply (auto simp add: Un_Diff dset_alt id_on_def prems(1))
-     apply (metis Int_Un_empty dset_alt insert_disjoint(2) prems(1) term.set(8,9))
-    apply (metis Int_Un_empty Int_emptyD bij_not_eq_twice dsel_dset(1,2) prems(1) term.set(8,9))
-    done
+  subgoal premises prems for V W xy M N'
+  proof -
+    have PVW: "val (term.Pair V W)" using prems(4,5) by (auto intro: val.intros)
+    show ?thesis using prems(7)
+    proof (cases rule: beta.cases)
+      case (OrdLet M0 M0' xy2 N0)
+      have "M0 = term.Pair V W" using OrdLet(1) by auto
+      then show ?thesis using OrdLet(3) PVW vals_are_normal normal_def by metis
+    next
+      case (Let V2 W2 xy2 M2)
+      have V2: "V2 = V" and W2: "W2 = W" using Let(1) by auto
+      obtain h where h: "bij h" "|supp h| <o |UNIV::'a set|" "id_on (FVars M - dset xy) h"
+          "dmap h xy = xy2" "permute_term h M = M2"
+        using Let(1) unfolding term.inject(8) by auto
+      have hfst: "h (dfst xy) = dfst xy2" and hsnd: "h (dsnd xy) = dsnd xy2"
+        using h(4) dfst_dmap[OF h(1)] dsnd_dmap[OF h(1)] by auto
+      have fresh: "{dsnd xy, h (dsnd xy)} \<inter> FVars V = {}"
+      proof -
+        have "dsnd xy \<notin> FVars V" using prems(6) dsel_dset(2) by blast
+        moreover have "h (dsnd xy) \<notin> FVars V"
+          using Let(5) V2 hsnd dsel_dset(2) by blast
+        ultimately show ?thesis by blast
+      qed
+      have "N' = (permute_term h M)[V <- h (dfst xy)][W <- h (dsnd xy)]"
+        using Let(2) h(5) V2 W2 hfst hsnd by auto
+      moreover have "(permute_term h M)[V <- h (dfst xy)][W <- h (dsnd xy)] = M[V <- dfst xy][W <- dsnd xy]"
+        apply (rule premute_term_usubst2[OF h(1) h(2)])
+        subgoal using h(3) unfolding id_on_def dset_alt by auto
+        subgoal using fresh .
+        done
+      ultimately show ?thesis by simp
+    qed auto
+  qed
   subgoal for N'
     apply (erule beta.cases)
     apply (auto elim:beta.cases)
@@ -570,14 +743,36 @@ lemma beta_deterministic: "M \<rightarrow> N \<Longrightarrow> M \<rightarrow> N
                  apply (auto elim:beta.cases)
     using normal_def num.intros(2) nums_are_normal apply blast
     done
-  subgoal premises prems for V f x M N' using prems(5)
-    apply -
-    apply (erule beta.cases)
-                 apply(auto simp add: prems(1-4) dset_alt simp del: term.inject elim:beta.cases)
-    apply (metis normal_def prems(4) term.inject(5) vals_are_normal)
-    apply (metis normal_def term.inject(5) val.intros(4) vals_are_normal)
-    apply auto
-    sorry
+  subgoal premises prems for V f x M N'
+  proof -
+    have vF: "val (Fix f x M)" by (rule val.intros(4))
+    show ?thesis using prems(6)
+    proof (cases rule: beta.cases)
+      case (OrdApp2 N0 N0' f2 x2 M2)
+      have "N0 = V" using OrdApp2(1) by auto
+      then show ?thesis using OrdApp2(3) prems(4) vals_are_normal normal_def by metis
+    next
+      case (OrdApp1 M0 M0' N0)
+      have "M0 = Fix f x M" using OrdApp1(1) by auto
+      then show ?thesis using OrdApp1(3) vF vals_are_normal normal_def by metis
+    next
+      case (FixBeta V2 f2 x2 M2)
+      have eqF: "Fix f x M = Fix f2 x2 M2" and V2: "V2 = V" using FixBeta(1) by auto
+      obtain h where h: "bij h" "|supp h| <o |UNIV::'a set|" "id_on (FVars M - {x, f}) h"
+          "h f = f2" "h x = x2" "permute_term h M = M2"
+        using eqF unfolding term.inject(6) by auto
+      have fresh: "{f, h f} \<inter> FVars V = {}"
+        using prems(5) FixBeta(4) h(4) V2 by auto
+      have "N' = (permute_term h M)[V <- h x][Fix f x M <- h f]"
+        unfolding h(4) h(5) h(6) eqF V2[symmetric] by (rule FixBeta(2))
+      moreover have "(permute_term h M)[V <- h x][Fix f x M <- h f] = M[V <- x][Fix f x M <- f]"
+        apply (rule premute_term_usubst2[OF h(1) h(2)])
+        subgoal using h(3) unfolding id_on_def by auto
+        subgoal using fresh .
+        done
+      ultimately show ?thesis by simp
+    qed auto
+  qed
   done
 
 lemma betas_pets:
@@ -678,6 +873,8 @@ lemma beta_usubst: "M \<rightarrow> N \<Longrightarrow> val V \<Longrightarrow> 
     apply auto
    apply (metis Int_emptyD dsel_dset(1))
   apply (auto intro: beta.intros)
+  apply (rule beta.Let)
+    apply (auto simp: FVars_usubst disjoint_iff split: if_splits)
   done
 
 lemma FVars_beta: "M \<rightarrow> N \<Longrightarrow> FVars N \<subseteq> FVars M"
@@ -687,7 +884,7 @@ lemma FVars_beta: "M \<rightarrow> N \<Longrightarrow> FVars N \<subseteq> FVars
   proof -
     have "FVars M[V <- x][Fix f x M <- f] \<subseteq> FVars M \<union> FVars V"
       using FVars_usubst fresh_usubst by fastforce
-    then have "z \<in> FVars M" using prems(2, 3) by auto
+    then have "z \<in> FVars M" using prems by auto
     then show ?thesis by auto
   qed
   done
@@ -1125,6 +1322,17 @@ inductive judgement :: "'var::var typing set \<Rightarrow> 'var::var typing set 
 | OkPrL_1: "(M1 :. Ok) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Pair M1 M2 :. Ok) ; \<Gamma> \<turnstile> \<Delta>"
 | OkPrL_2: "(M2 :. Ok) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Pair M1 M2 :. Ok) ; \<Gamma> \<turnstile> \<Delta>"
 
+text \<open>CAVEAT (2026-07-07): the equivariance obligation generated below is FALSE as stated. The
+  permutation action synthesized for the @{typ "'a typing set"} arguments is @{term id} (the MRBNF
+  walk does not reach through @{type set}/@{type prod}), so the obligation demands the rule
+  disjunction re-hold with @{term "\<sigma> ` B"} but UNCHANGED @{term x1}/@{term x2} — unprovable for the
+  Fix/Let disjuncts (take @{term "B = {f,x}"} with @{term "f \<in> FVars M"} and \<sigma> swapping f with a
+  free variable of M: no alpha-witness exists). The refresh obligation, by contrast, is trivially
+  provable since the computed support of the arguments is empty. The proper fix is in the
+  binder_datatypes library: synthesize the true action @{term "image (map_prod (permute_term \<sigma>) id)"}
+  for such argument types (or remodel contexts as lists, which the MRBNF walk handles, cf.
+  SystemFSub). Until then the sorry below cannot be honestly discharged, and
+  @{text judgement.strong_induct}'s binder-avoidance should be treated as unverified.\<close>
 binder_inductive (no_auto_equiv) judgement
   sorry
 
@@ -1236,28 +1444,217 @@ lemma subst_If_inversion:
   done
 
 lemma subst_Fix_inversion:
+  fixes M :: "'a::var term"
   assumes "M[t <- x] = Fix f z Q" and "\<not> M = Var x"
   assumes "f \<noteq> x" and "f \<notin> FVars t" and "x \<noteq> z" and "z \<notin> FVars t"
   obtains Q' where "M = Fix f z Q'" and "Q'[t <- x] = Q"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x f z Q rule:term.strong_induct)
           apply(auto simp add:blocked_inductive Int_Un_distrib split:if_splits)
-  subgoal for f' z' Q' \<sigma>
-    sorry
-
-  thm avoiding_bij
+  subgoal premises prems for x1 x2 x3 fa
+  proof -
+    note bfa = prems(16) and sfa = prems(17) and idfa = prems(18)
+    have injfa: "\<And>a b. fa a = fa b \<Longrightarrow> a = b" using bfa by (simp add: bij_implies_inject)
+    define \<sigma> where "\<sigma> \<equiv> x \<leftrightarrow> fa x"
+    have bs: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|"
+      unfolding \<sigma>_def by (auto simp: Swapping.bij_swap Swapping.supp_swap_bound infinite_UNIV)
+    define f' where "f' \<equiv> \<sigma> \<circ> fa"
+    have bf': "bij f'" unfolding f'_def using bfa bs(1) by (rule bij_comp)
+    have sf': "|supp f'| <o |UNIV::'a set|"
+      unfolding f'_def using sfa bs(2) by (metis supp_comp_bound infinite_UNIV)
+    have faid: "\<And>y. y \<in> FVars x3 \<Longrightarrow> y \<noteq> x \<Longrightarrow> y \<notin> {x1, x2} \<Longrightarrow> fa y = y"
+      using idfa unfolding id_on_def by (auto simp: FVars_usubst)
+    have f'x1: "f' x1 = fa x1"
+      unfolding f'_def \<sigma>_def using prems(12) injfa[of x1 x] prems(2) by (metis comp_apply swap_simps(3))
+    have f'x2: "f' x2 = fa x2"
+      unfolding f'_def \<sigma>_def using prems(14) injfa[of x2 x] prems(7) by (metis comp_apply swap_simps(3))
+    have f'x: "f' x = x" unfolding f'_def \<sigma>_def by (simp add: swap_simps)
+    have f'other: "\<And>w. w \<in> FVars x3 \<Longrightarrow> w \<noteq> x \<Longrightarrow> w \<notin> {x1, x2} \<Longrightarrow> f' w = w"
+    proof -
+      fix w assume w: "w \<in> FVars x3" "w \<noteq> x" "w \<notin> {x1, x2}"
+      then have faw: "fa w = w" using faid by auto
+      have "w \<noteq> fa x" using injfa[of w x] faw w(2) by auto
+      then show "f' w = w" unfolding f'_def \<sigma>_def using faw w(2) by (simp add: swap_simps)
+    qed
+    have f'id: "id_on (FVars x3 - {x2, x1}) f'"
+      unfolding id_on_def using f'other f'x by auto
+    define Q' where "Q' \<equiv> permute_term f' x3"
+    have ss_id: "\<sigma> \<circ> \<sigma> = id" unfolding \<sigma>_def by (rule ext) (auto simp: swap_simps)
+    have comp_eq: "\<sigma> \<circ> f' = fa" unfolding f'_def comp_assoc[symmetric] ss_id by simp
+    have pQ': "permute_term \<sigma> Q' = permute_term fa x3"
+      unfolding Q'_def using term.permute_comp bs bf' sf' comp_eq by metis
+    have faxQ': "fa x \<in> f' ` FVars x3 \<Longrightarrow> fa x = x"
+    proof -
+      assume "fa x \<in> f' ` FVars x3"
+      then obtain w where w: "w \<in> FVars x3" and eq: "f' w = fa x" by auto
+      show "fa x = x"
+      proof (rule ccontr)
+        assume nfx: "fa x \<noteq> x"
+        have w1: "w \<noteq> x1" using f'x1 eq injfa[of x1 x] prems(2) by auto
+        have w2: "w \<noteq> x2" using f'x2 eq injfa[of x2 x] prems(7) by auto
+        have wx: "w \<noteq> x" using f'x eq nfx by auto
+        have "f' w = w" using f'other w wx w1 w2 by auto
+        then have "w = fa x" using eq by simp
+        moreover have "fa w = w" using faid w wx w1 w2 by auto
+        ultimately show False using injfa[of w x] wx by auto
+      qed
+    qed
+    have idQ': "id_on (FVars Q' - {x}) \<sigma>"
+    proof -
+      have "\<And>y. y \<in> FVars Q' \<Longrightarrow> y \<noteq> x \<Longrightarrow> \<sigma> y = y"
+      proof -
+        fix y assume y: "y \<in> FVars Q'" "y \<noteq> x"
+        then have y3: "y \<in> f' ` FVars x3" unfolding Q'_def term.FVars_permute[OF bf' sf'] by auto
+        show "\<sigma> y = y"
+        proof (cases "fa x = x")
+          case True then show ?thesis unfolding \<sigma>_def using y(2) by (simp add: swap_simps)
+        next
+          case False
+          then have "y \<noteq> fa x" using faxQ' y3 by (metis imageI image_iff)
+          then show ?thesis unfolding \<sigma>_def using y(2) by (simp add: swap_simps)
+        qed
+      qed
+      then show ?thesis unfolding id_on_def by auto
+    qed
+    have sx: "\<sigma> x = fa x" unfolding \<sigma>_def by (simp add: swap_simps)
+    have stepA: "(permute_term fa x3)[t <- fa x] = permute_term fa (x3[t <- x])"
+    proof (cases "x \<in> FVars x3")
+      case True
+      have fat: "permute_term fa t = t"
+      proof (rule term.permute_cong_id[OF bfa sfa])
+        fix a assume "a \<in> FVars t"
+        then have "a \<in> FVars (x3[t <- x]) - {x2, x1}" using True prems(1,6) by (auto simp: FVars_usubst)
+        then show "fa a = a" using idfa unfolding id_on_def by auto
+      qed
+      show ?thesis unfolding permute_usubst[OF bfa sfa] fat ..
+    next
+      case False
+      then have idle: "x3[t <- x] = x3" by (simp add: subst_idle)
+      have "fa x \<notin> FVars (permute_term fa x3)"
+        unfolding term.FVars_permute[OF bfa sfa] using False injfa by auto
+      then show ?thesis unfolding idle by (simp add: subst_idle)
+    qed
+    have chain: "Q'[t <- x] = permute_term fa (x3[t <- x])"
+      using premute_term_usubst[OF bs(1) bs(2) idQ'] pQ' sx stepA by metis
+    show ?thesis
+      apply (rule exI[of _ Q'], rule conjI)
+       apply (rule exI[of _ f'])
+       using bf' sf' f'id f'x1 f'x2 Q'_def apply blast
+      using chain by simp
+  qed
   done
 
+lemma dpair_eqI: "dfst a = dfst b \<Longrightarrow> dsnd a = dsnd b \<Longrightarrow> a = (b::'a::infinite dpair)"
+  by transfer auto
+
 lemma subst_Let_inversion:
+  fixes M :: "'a::var term"
   assumes "M[t <- x] = Let xy P Q" and "\<not> M = Var x"
   assumes "x \<notin> dset xy" and "FVars t \<inter> dset xy = {}"
   obtains P' Q' where "M = Let xy P' Q'" and "P'[t <- x] = P" and "Q'[t <- x] = Q"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: M t x rule:term.strong_induct)
+  apply(binder_induction M avoiding: M t x "dfst xy" "dsnd xy" P Q rule:term.strong_induct)
   apply(auto simp add:blocked_inductive Int_Un_distrib split:if_splits)
-  sorry
+  subgoal premises prems for x1 x2 x3 f
+  proof -
+    note bf = prems(12) and sf = prems(13) and idf = prems(14)
+    have injf: "\<And>a b. f a = f b \<Longrightarrow> a = b" using bf by (simp add: bij_implies_inject)
+    define \<sigma> where "\<sigma> \<equiv> x \<leftrightarrow> f x"
+    have bs: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|"
+      unfolding \<sigma>_def by (auto simp: Swapping.bij_swap Swapping.supp_swap_bound infinite_UNIV)
+    define f' where "f' \<equiv> \<sigma> \<circ> f"
+    have bf': "bij f'" unfolding f'_def using bf bs(1) by (rule bij_comp)
+    have sf': "|supp f'| <o |UNIV::'a set|"
+      unfolding f'_def using sf bs(2) by (metis supp_comp_bound infinite_UNIV)
+    have fid: "\<And>y. y \<in> FVars x3 \<Longrightarrow> y \<noteq> x \<Longrightarrow> y \<notin> dset x1 \<Longrightarrow> f y = y"
+      using idf unfolding id_on_def by (auto simp: FVars_usubst)
+    have fd1x: "f (dfst x1) \<noteq> x" using prems(10) dsel_dset(1) dfst_dmap[OF bf] by metis
+    have fd2x: "f (dsnd x1) \<noteq> x" using prems(10) dsel_dset(2) dsnd_dmap[OF bf] by metis
+    have d1x: "dfst x1 \<noteq> x" and d2x: "dsnd x1 \<noteq> x" using prems(3) dsel_dset by blast+
+    have f'd1: "f' (dfst x1) = f (dfst x1)"
+      unfolding f'_def \<sigma>_def using fd1x injf[of "dfst x1" x] d1x by (metis comp_apply swap_simps(3))
+    have f'd2: "f' (dsnd x1) = f (dsnd x1)"
+      unfolding f'_def \<sigma>_def using fd2x injf[of "dsnd x1" x] d2x by (metis comp_apply swap_simps(3))
+    have f'x: "f' x = x" unfolding f'_def \<sigma>_def by (simp add: swap_simps)
+    have f'other: "\<And>w. w \<in> FVars x3 \<Longrightarrow> w \<noteq> x \<Longrightarrow> w \<notin> dset x1 \<Longrightarrow> f' w = w"
+    proof -
+      fix w assume w: "w \<in> FVars x3" "w \<noteq> x" "w \<notin> dset x1"
+      then have fw: "f w = w" using fid by auto
+      have "w \<noteq> f x" using injf[of w x] fw w(2) by auto
+      then show "f' w = w" unfolding f'_def \<sigma>_def using fw w(2) by (simp add: swap_simps)
+    qed
+    have f'id: "id_on (FVars x3 - dset x1) f'"
+      unfolding id_on_def using f'other f'x by auto
+    have dm: "dmap f' x1 = dmap f x1"
+      by (rule dpair_eqI) (simp_all add: dfst_dmap[OF bf'] dsnd_dmap[OF bf'] dfst_dmap[OF bf] dsnd_dmap[OF bf] f'd1 f'd2)
+    define Q' where "Q' \<equiv> permute_term f' x3"
+    have ss_id: "\<sigma> \<circ> \<sigma> = id" unfolding \<sigma>_def by (rule ext) (auto simp: swap_simps)
+    have comp_eq: "\<sigma> \<circ> f' = f" unfolding f'_def comp_assoc[symmetric] ss_id by simp
+    have pQ': "permute_term \<sigma> Q' = permute_term f x3"
+      unfolding Q'_def using term.permute_comp bs bf' sf' comp_eq by metis
+    have fxQ': "f x \<in> f' ` FVars x3 \<Longrightarrow> f x = x"
+    proof -
+      assume "f x \<in> f' ` FVars x3"
+      then obtain w where w: "w \<in> FVars x3" and eq: "f' w = f x" by auto
+      show "f x = x"
+      proof (rule ccontr)
+        assume nfx: "f x \<noteq> x"
+        have w1: "w \<noteq> dfst x1" using f'd1 eq injf[of "dfst x1" x] d1x by auto
+        have w2: "w \<noteq> dsnd x1" using f'd2 eq injf[of "dsnd x1" x] d2x by auto
+        have wx: "w \<noteq> x" using f'x eq nfx by auto
+        have wd: "w \<notin> dset x1" using w1 w2 dset_alt by auto
+        have "f' w = w" using f'other w wx wd by auto
+        then have "w = f x" using eq by simp
+        moreover have "f w = w" using fid w wx wd by auto
+        ultimately show False using injf[of w x] wx by auto
+      qed
+    qed
+    have idQ': "id_on (FVars Q' - {x}) \<sigma>"
+    proof -
+      have "\<And>y. y \<in> FVars Q' \<Longrightarrow> y \<noteq> x \<Longrightarrow> \<sigma> y = y"
+      proof -
+        fix y assume y: "y \<in> FVars Q'" "y \<noteq> x"
+        then have y3: "y \<in> f' ` FVars x3" unfolding Q'_def term.FVars_permute[OF bf' sf'] by auto
+        show "\<sigma> y = y"
+        proof (cases "f x = x")
+          case True then show ?thesis unfolding \<sigma>_def using y(2) by (simp add: swap_simps)
+        next
+          case False
+          then have "y \<noteq> f x" using fxQ' y3 by (metis imageI image_iff)
+          then show ?thesis unfolding \<sigma>_def using y(2) by (simp add: swap_simps)
+        qed
+      qed
+      then show ?thesis unfolding id_on_def by auto
+    qed
+    have sx: "\<sigma> x = f x" unfolding \<sigma>_def by (simp add: swap_simps)
+    have stepA: "(permute_term f x3)[t <- f x] = permute_term f (x3[t <- x])"
+    proof (cases "x \<in> FVars x3")
+      case True
+      have ft: "permute_term f t = t"
+      proof (rule term.permute_cong_id[OF bf sf])
+        fix a assume "a \<in> FVars t"
+        then have "a \<in> FVars (x3[t <- x]) - dset x1" using True prems(2) by (auto simp: FVars_usubst)
+        then show "f a = a" using idf unfolding id_on_def by auto
+      qed
+      show ?thesis unfolding permute_usubst[OF bf sf] ft ..
+    next
+      case False
+      then have idle: "x3[t <- x] = x3" by (simp add: subst_idle)
+      have "f x \<notin> FVars (permute_term f x3)"
+        unfolding term.FVars_permute[OF bf sf] using False injf by auto
+      then show ?thesis unfolding idle by (simp add: subst_idle)
+    qed
+    have chain: "Q'[t <- x] = permute_term f (x3[t <- x])"
+      using premute_term_usubst[OF bs(1) bs(2) idQ'] pQ' sx stepA by metis
+    show ?thesis
+      apply (rule exI[of _ x2], rule exI[of _ Q'], rule conjI)
+       apply (rule exI[of _ f'])
+       using bf' sf' f'id dm Q'_def apply blast
+      using chain by simp
+  qed
+  done
 
 lemma subst_num_inversion: "num m \<Longrightarrow> \<not> blocked z n \<Longrightarrow> n[N <- z] = m \<Longrightarrow> n = m"
 proof (induction arbitrary: n rule:num.induct)
@@ -1496,6 +1893,95 @@ next
   ultimately show ?case by blast
 qed
 
+text \<open>Substitution distributes over Let without any freshness condition on the scrutinee:
+  the @{text "dset xy \<inter> FVars t1 = {}"} hypothesis of @{thm usubst_simps(9)} is an artifact
+  (the scrutinee is not under the binder). Proved by renaming the binder fresh, pushing, and
+  renaming back.\<close>
+lemma usubst_Let:
+  fixes A :: "'a::var term"
+  assumes zd: "z \<notin> dset xy" and dN: "dset xy \<inter> FVars N = {}"
+  shows "(term.Let xy A B)[N <- z] = term.Let xy (A[N <- z]) (B[N <- z])"
+proof -
+  have b1: "|dset xy| <o |UNIV::'a set|" by (rule finite_ordLess_infinite2[OF finite_dset infinite_UNIV])
+  have b2: "|FVars A \<union> FVars B \<union> FVars N \<union> {z} \<union> FVars (A[N <- z]) \<union> FVars (B[N <- z]) \<union> dset xy| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) (simp add: finite_dset)
+  obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+      "g ` dset xy \<inter> (FVars A \<union> FVars B \<union> FVars N \<union> {z} \<union> FVars (A[N <- z]) \<union> FVars (B[N <- z]) \<union> dset xy) = {}"
+      "id_on ((FVars A \<union> FVars B \<union> FVars N \<union> {z} \<union> FVars (A[N <- z]) \<union> FVars (B[N <- z])) - dset xy) g" "g \<circ> g = id"
+    using eextend_fresh[OF b1 b2 infinite_UNIV,
+        of "(FVars A \<union> FVars B \<union> FVars N \<union> {z} \<union> FVars (A[N <- z]) \<union> FVars (B[N <- z])) - dset xy"] by auto
+  have gz: "g z = z" using g(4) zd unfolding id_on_def by auto
+  have gN: "permute_term g N = N"
+    by (rule term.permute_cong_id[OF g(1) g(2)]) (use g(4) dN in \<open>auto simp: id_on_def disjoint_iff\<close>)
+  have alpha_out: "term.Let xy A B = term.Let (dmap g xy) A (permute_term g B)"
+    using g by (auto intro!: exI[of _ g] simp: id_on_def)
+  have zd': "z \<notin> dset (dmap g xy)" using g(3) unfolding dpair.set_map[OF g(1) g(2)] by blast
+  have dN': "dset (dmap g xy) \<inter> FVars N = {}" using g(3) unfolding dpair.set_map[OF g(1) g(2)] by blast
+  have dA': "dset (dmap g xy) \<inter> FVars A = {}" using g(3) unfolding dpair.set_map[OF g(1) g(2)] by blast
+  have push: "(term.Let (dmap g xy) A (permute_term g B))[N <- z]
+      = term.Let (dmap g xy) (A[N <- z]) ((permute_term g B)[N <- z])"
+    by (rule usubst_simps(9)[OF zd' dN' dA'])
+  have body: "(permute_term g B)[N <- z] = permute_term g (B[N <- z])"
+    unfolding permute_usubst[OF g(1) g(2)] gN gz ..
+  have alpha_back: "term.Let (dmap g xy) (A[N <- z]) (permute_term g (B[N <- z])) = term.Let xy (A[N <- z]) (B[N <- z])"
+  proof -
+    have inv1: "bij (inv g)" "|supp (inv g)| <o |UNIV::'a set|"
+      using g(1,2) by (auto simp: supp_inv_bound)
+    have dmap_inv: "dmap (inv g) (dmap g xy) = xy"
+      by (rule dpair_eqI) (simp_all add: dfst_dmap dsnd_dmap g(1) inv1(1) bij_imp_bij_inv)
+    have perm_inv: "permute_term (inv g) (permute_term g (B[N <- z])) = B[N <- z]"
+      using permute_term_inv[OF g(1,2)] .
+    have idon: "id_on (FVars (permute_term g (B[N <- z])) - dset (dmap g xy)) (inv g)"
+    proof -
+      have "\<And>y. y \<in> FVars (permute_term g (B[N <- z])) \<Longrightarrow> y \<notin> dset (dmap g xy) \<Longrightarrow> inv g y = y"
+      proof -
+        fix y assume "y \<in> FVars (permute_term g (B[N <- z]))" and yd: "y \<notin> dset (dmap g xy)"
+        then obtain w where w: "w \<in> FVars (B[N <- z])" and yw: "y = g w"
+          unfolding term.FVars_permute[OF g(1) g(2)] by auto
+        show "inv g y = y"
+        proof (cases "w \<in> dset xy")
+          case True
+          then have "g w \<in> dset (dmap g xy)" unfolding dpair.set_map[OF g(1) g(2)] by auto
+          then show ?thesis using yd yw by simp
+        next
+          case False
+          then have "g w = w" using g(4) w unfolding id_on_def by auto
+          then show ?thesis using yw g(1) by (metis bij_is_inj inv_f_f)
+        qed
+      qed
+      then show ?thesis unfolding id_on_def by auto
+    qed
+    show ?thesis
+      using inv1 idon dmap_inv perm_inv by (auto intro!: exI[of _ "inv g"])
+  qed
+  show ?thesis
+    unfolding alpha_out push body alpha_back ..
+qed
+
+lemma blocked_Let:
+  fixes R :: "'a::var term"
+  assumes "blocked z R" and "z \<notin> dset xy"
+  shows "blocked z (term.Let xy R S)"
+proof -
+  from assms obtain hole E where ctx: "eval_ctx hole E" and R: "R = E[Var z <- hole]"
+    unfolding blocked_def by blast
+  obtain hole' :: 'a where h': "hole' \<notin> {z, hole} \<union> FVars E \<union> FVars S \<union> dset xy"
+    using arb_element[of "{z, hole} \<union> FVars E \<union> FVars S \<union> dset xy"] finite_FVars finite_dset by auto
+  define E' where "E' \<equiv> E[Var hole' <- hole]"
+  have ctx': "eval_ctx hole' E'" unfolding E'_def by (rule eval_subst[OF ctx]) (use h' in auto)
+  have R': "R = E'[Var z <- hole']"
+    unfolding E'_def R using subst_subst[OF ctx, of hole' z] h' by auto
+  have ctxL: "eval_ctx hole' (term.Let xy E' S)"
+    by (rule eval_ctx.intros(8)[OF ctx']) (use h' in auto)
+  have hz: "hole' \<noteq> z" using h' by auto
+  have push: "(term.Let xy E' S)[Var z <- hole'] = term.Let xy (E'[Var z <- hole']) (S[Var z <- hole'])"
+    by (rule usubst_Let) (use h' hz assms(2) in auto)
+  have Sidle: "S[Var z <- hole'] = S" using h' by (auto simp: subst_idle)
+  show ?thesis unfolding blocked_def
+    apply (rule exI[of _ hole'], rule exI[of _ "term.Let xy E' S"])
+    using ctxL push Sidle R' by auto
+qed
+
 section \<open>B3\<close>
 
 thm eval_ctx.strong_induct[where P = "\<lambda>x E p. \<forall>M.
@@ -1582,14 +2068,16 @@ proof (binder_induction P1 P2 avoiding: z N M rule:beta.strong_induct[unfolded U
       using subst_val_inversion \<open>val V\<close> \<open>val W\<close> by auto
     then have "\<not> blocked z W'" using \<open>P' = Pair V' W'\<close> \<open>\<not> blocked z P'\<close> blocked_inductive(7) by auto
     then have "val W'" using subst_val_inversion \<open>W'[N <- z] = W\<close> \<open>val W\<close> by auto
-    have "(Q'[V' <- dfst xy][W' <- dsnd xy])[N <- z] = Q[V <- dfst xy][W <- dsnd xy]"
+    have subst_eq: "(Q'[V' <- dfst xy][W' <- dsnd xy])[N <- z] = Q[V <- dfst xy][W <- dsnd xy]"
       using usubst_usubst[of "dsnd xy" z N "Q'[V' <- dfst xy]" W'] usubst_usubst[of "dfst xy" z N Q' V']
       using 12(1) 12(2) \<open>Q'[N <- z] = Q\<close> \<open>V'[N <- z] = V\<close> \<open>W'[N <- z] = W\<close>
       by (metis Int_emptyD  dsel_dset(1,2))
-    then show ?case
-      using \<open>M = term.Let xy P' Q'\<close> \<open>P' = term.Pair V' W'\<close> beta.Let usubst_simps(5)
-      using \<open>val V'\<close> \<open>val W'\<close>
-      by metis
+    have fresh: "dset xy \<inter> FVars V' = {}"
+      using 12 \<open>V'[N <- z] = V\<close> FVars_usubst[of V' N z] by (auto split: if_splits)
+    have step: "term.Let xy (term.Pair V' W') Q' \<rightarrow> Q'[V' <- dfst xy][W' <- dsnd xy]"
+      by (rule beta.Let[OF \<open>val V'\<close> \<open>val W'\<close> fresh])
+    show ?case
+      using step subst_eq \<open>M = term.Let xy P' Q'\<close> \<open>P' = term.Pair V' W'\<close> usubst_simps(5) by metis
   next
     case 13
     then have "M[N <- z] = Pred Zero" by simp
@@ -1624,8 +2112,12 @@ proof (binder_induction P1 P2 avoiding: z N M rule:beta.strong_induct[unfolded U
       by (metis insert_disjoint(2) insert_iff)
     have "\<not> blocked z V'" using blocked_inductive \<open>\<not> blocked z M\<close> \<open>M = App (Fix f x Q') V'\<close> by blast
     then have "val V'" using subst_val_inversion \<open>val V\<close> \<open>V'[N <- z] = V\<close> by auto
+    have "f \<notin> FVars V'"
+      using 15 \<open>V'[N <- z] = V\<close> FVars_usubst[of V' N z] by (auto split: if_splits)
+    then have step: "App (Fix f x Q') V' \<rightarrow> Q'[V' <- x][Fix f x Q' <- f]"
+      using \<open>val V'\<close> by (rule beta.FixBeta[rotated])
     then show ?case
-      using \<open>M = App (Fix f x Q') V'\<close> beta.FixBeta usubst_simps(5) * by metis
+      using \<open>M = App (Fix f x Q') V'\<close> * usubst_simps(5) by metis
   qed
   then show ?case using 1 by auto
 next
@@ -1813,7 +2305,16 @@ lemma count_term_simps[simp]:
 lemma eval_ctx_beta: "eval_ctx x E \<Longrightarrow> M \<rightarrow> N \<Longrightarrow> E[M <- x] \<rightarrow> E[N <- x]"
   apply(binder_induction x E avoiding: M N E rule:eval_ctx.strong_induct)
   apply(auto intro:beta.intros)
-  sorry (* this will work once binder_induction works*)
+  subgoal premises prems for hole Ea Na xy
+  proof -
+    have 1: "dset xy \<inter> FVars Ea = {}" using prems(3) by blast
+    have L: "(term.Let xy Ea Na)[M <- hole] = term.Let xy (Ea[M <- hole]) Na"
+      by (subst usubst_simps(9)) (use prems(1,6,7) 1 in auto)
+    have R: "(term.Let xy Ea Na)[N <- hole] = term.Let xy (Ea[N <- hole]) Na"
+      by (subst usubst_simps(9)) (use prems(2,6,7) 1 in auto)
+    show ?thesis unfolding L R using beta.OrdLet[OF prems(5)] by simp
+  qed
+  done
 
 corollary eval_ctx_betas: 
   assumes "eval_ctx x E" and "M \<rightarrow>[n] N" shows "E[M <- x] \<rightarrow>[n] E[N <- x]"
@@ -1842,15 +2343,65 @@ qed
 
 thm eval_ctx.intros
 
-lemma val_subst: "val V \<Longrightarrow> V \<noteq> Var x \<Longrightarrow> val V[Q <- x]"
-  apply(binder_induction V avoiding: "App Q (Var x)" rule: val.strong_induct)
-     apply(auto intro:val.intros)
-  oops
+lemma num_usubst_idle[simp]: "num n \<Longrightarrow> n[Q <- x] = n"
+  by (induct rule: num.induct) auto
 
-lemma eval_ctx_subst: "eval_ctx x E \<Longrightarrow> x \<noteq> y \<Longrightarrow> x \<notin> FVars Q \<Longrightarrow> eval_ctx x E[Q <- y]"
-  apply(induction rule:eval_ctx.induct)
-  apply(auto intro:eval_ctx.intros simp add:)
-  sorry (*Questionably True*)
+text \<open>The naive @{text "val V \<Longrightarrow> V \<noteq> Var x \<Longrightarrow> val V[Q <- x]"} is false (e.g.
+  @{text "V = Pair (Var x) Zero"} with non-value @{text Q}); unblockedness is the right hypothesis.\<close>
+lemma val_subst_unblocked: "val V \<Longrightarrow> \<not> blocked x V \<Longrightarrow> val V[Q <- x]"
+  apply(binder_induction V avoiding: "App Q (Var x)" rule: val.strong_induct)
+  subgoal for xa by (metis blocked_inductive(1) usubst_simps(5) val.intros(1))
+  subgoal for n by (simp add: val.intros(2))
+  subgoal for Va W by (metis blocked_inductive(6,7) usubst_simps(8) val.intros(3))
+  subgoal for f xa Ma by (auto intro: val.intros)
+  done
+
+text \<open>NB: for general @{term Q} this is FALSE (hence the author's "Questionably True"):
+  @{term "Pair (Var y) (Var x)"} is an evaluation context, but its substitution instance
+  @{term "Pair Q (Var x)"} is one only when @{term "val Q"} (the hole sits right of a
+  value position). With @{term "val Q"} it is true:\<close>
+lemma eval_ctx_subst: "eval_ctx x E \<Longrightarrow> x \<noteq> y \<Longrightarrow> x \<notin> FVars Q \<Longrightarrow> val Q \<Longrightarrow> eval_ctx x E[Q <- y]"
+proof (binder_induction x E avoiding: "App Q (Var y)" E rule: eval_ctx.strong_induct)
+  case (1 hole)
+  then show ?case by (auto intro: eval_ctx.intros)
+next
+  case (2 hole Ea M f xa)
+  have push: "(App (Fix f xa M) Ea)[Q <- y] = App (Fix f xa (M[Q <- y])) (Ea[Q <- y])"
+    using 2(1) by (auto simp: disjoint_iff)
+  have hM: "hole \<notin> FVars (M[Q <- y])"
+    using 2(4,6) FVars_usubst[of M Q y] by (auto split: if_splits)
+  show ?case unfolding push by (rule eval_ctx.intros(2)[OF 2(8)[OF 2(5,6,7)] hM])
+next
+  case (3 hole Ea N)
+  have hN: "hole \<notin> FVars (N[Q <- y])" using 3(2,4) FVars_usubst[of N Q y] by (auto split: if_splits)
+  show ?case using eval_ctx.intros(3)[OF 3(6)[OF 3(3,4,5)] hN] by simp
+next
+  case (4 hole Ea)
+  then show ?case using eval_ctx.intros(4)[OF 4(5)[OF 4(2,3,4)]] by simp
+next
+  case (5 hole Ea)
+  then show ?case using eval_ctx.intros(5)[OF 5(5)[OF 5(2,3,4)]] by simp
+next
+  case (6 hole Ea N)
+  have hN: "hole \<notin> FVars (N[Q <- y])" using 6(2,4) FVars_usubst[of N Q y] by (auto split: if_splits)
+  show ?case using eval_ctx.intros(6)[OF 6(6)[OF 6(3,4,5)] hN] by simp
+next
+  case (7 V hole Ea)
+  have vQ: "val (V[Q <- y])" using 7(1,6) val_usubst by auto
+  have hV: "hole \<notin> FVars (V[Q <- y])" using 7(3,5) FVars_usubst[of V Q y] by (auto split: if_splits)
+  show ?case using eval_ctx.intros(7)[OF vQ 7(7)[OF 7(4,5,6)] hV] by simp
+next
+  case (8 hole Ea N xy)
+  have push: "(term.Let xy Ea N)[Q <- y] = term.Let xy (Ea[Q <- y]) (N[Q <- y])"
+    using 8(1,2) by (subst usubst_simps(9)) (auto simp: disjoint_iff)
+  have hN: "hole \<notin> FVars (N[Q <- y])" using 8(4,7) FVars_usubst[of N Q y] by (auto split: if_splits)
+  show ?case unfolding push by (rule eval_ctx.intros(8)[OF 8(9)[OF 8(6,7,8)] hN 8(5)])
+next
+  case (9 hole Ea N P)
+  have hN: "hole \<notin> FVars (N[Q <- y])" using 9(2,5) FVars_usubst[of N Q y] by (auto split: if_splits)
+  have hP: "hole \<notin> FVars (P[Q <- y])" using 9(3,5) FVars_usubst[of P Q y] by (auto split: if_splits)
+  show ?case using eval_ctx.intros(9)[OF 9(7)[OF 9(4,5,6)] hN hP] by simp
+qed
 
 lemma count_idle[simp]: "x \<notin> FVars M \<Longrightarrow> count_term x M = 0"
   apply(binder_induction M avoiding: "App (Var x) M" rule:term.strong_induct)
@@ -1929,20 +2480,59 @@ proof(binder_induction M N avoiding: "App M (App (Var z) Q)" rule:beta.strong_in
   then show ?case using OrdApp2 by (auto intro: beta.intros)
 next
   case (OrdPair2 V Na N')
-  then have "\<not> blocked z Na" using 
+  then have "\<not> blocked z Na" using
       blocked_inductive by fast
   have "\<not> blocked z V" using \<open>\<not> blocked z (Pair V Na)\<close> blocked_inductive(6) by metis
-  then have "val V[Q <- z]" using \<open>val V\<close> sorry
+  then have "val V[Q <- z]" using \<open>val V\<close> val_subst_unblocked by auto
   then show ?case using OrdPair2 beta.intros(6) \<open>\<not> blocked z Na\<close> by auto
 next
   case (OrdLet Ma M' xy Na)
-  then show ?case sorry
+  have av: "z \<notin> dset xy" "dset xy \<inter> FVars Q = {}" "dset xy \<inter> FVars Ma = {}" "dset xy \<inter> FVars M' = {}"
+    using OrdLet(1) FVars_beta[OF OrdLet(2)] by (auto simp: disjoint_iff subset_iff)
+  have nb: "\<not> blocked z Ma" using OrdLet(3) blocked_inductive(8) av(1,3) by metis
+  have push1: "(term.Let xy Ma Na)[Q <- z] = term.Let xy (Ma[Q <- z]) (Na[Q <- z])"
+    by (rule usubst_simps(9)[OF av(1) av(2) av(3)])
+  have push2: "(term.Let xy M' Na)[Q <- z] = term.Let xy (M'[Q <- z]) (Na[Q <- z])"
+    by (rule usubst_simps(9)[OF av(1) av(2) av(4)])
+  show ?case unfolding push1 push2 by (rule beta.OrdLet[OF OrdLet(4)[OF nb]])
 next
-  case (Let xy V W Ma)
-  then show ?case sorry
+  case (Let V W xy Ma)
+  have av: "z \<notin> dset xy" "dset xy \<inter> FVars Q = {}" "dset xy \<inter> FVars (term.Pair V W) = {}"
+    using Let(1) by (auto simp: disjoint_iff)
+  have nbP: "\<not> blocked z (term.Pair V W)"
+    using Let(5) blocked_inductive(8) av(1,3) by metis
+  have nbV: "\<not> blocked z V" using nbP blocked_inductive(6) by metis
+  have nbW: "\<not> blocked z W" using nbP Let(2) blocked_inductive(7) by metis
+  have vV: "val (V[Q <- z])" using Let(2) nbV val_subst_unblocked by auto
+  have vW: "val (W[Q <- z])" using Let(3) nbW val_subst_unblocked by auto
+  have fr: "dset xy \<inter> FVars (V[Q <- z]) = {}"
+    using Let(4) av(2) FVars_usubst[of V Q z] by (auto simp: disjoint_iff split: if_splits)
+  have push: "(term.Let xy (term.Pair V W) Ma)[Q <- z] = term.Let xy (term.Pair (V[Q <- z]) (W[Q <- z])) (Ma[Q <- z])"
+    using av by simp
+  have subst_comm: "Ma[V <- dfst xy][W <- dsnd xy][Q <- z] = Ma[Q <- z][V[Q <- z] <- dfst xy][W[Q <- z] <- dsnd xy]"
+    using usubst_usubst[of "dsnd xy" z Q "Ma[V <- dfst xy]" W] usubst_usubst[of "dfst xy" z Q Ma V] av(1,2)
+    by (metis Int_emptyD dsel_dset(1,2))
+  have step: "term.Let xy (term.Pair (V[Q <- z]) (W[Q <- z])) (Ma[Q <- z]) \<rightarrow> Ma[Q <- z][V[Q <- z] <- dfst xy][W[Q <- z] <- dsnd xy]"
+    by (rule beta.Let[OF vV vW fr])
+  show ?case unfolding push using step subst_comm by simp
 next
-  case (FixBeta f xa Ma V)
-  then show ?case sorry
+  case (FixBeta V f xa Ma)
+  have av: "f \<noteq> z" "xa \<noteq> z" "f \<notin> FVars Q" "xa \<notin> FVars Q"
+    using FixBeta(1) by (auto simp: disjoint_iff)
+  have nbV: "\<not> blocked z V" using FixBeta(4) blocked_inductive(2) by metis
+  have vV: "val (V[Q <- z])" using FixBeta(2) nbV val_subst_unblocked by auto
+  have fr: "f \<notin> FVars (V[Q <- z])"
+    using FixBeta(3) av(3) FVars_usubst[of V Q z] by (auto split: if_splits)
+  have pushF: "(Fix f xa Ma)[Q <- z] = Fix f xa (Ma[Q <- z])"
+    using av by simp
+  have push: "(App (Fix f xa Ma) V)[Q <- z] = App (Fix f xa (Ma[Q <- z])) (V[Q <- z])"
+    using pushF by simp
+  have subst_comm: "Ma[V <- xa][Fix f xa Ma <- f][Q <- z] = Ma[Q <- z][V[Q <- z] <- xa][Fix f xa (Ma[Q <- z]) <- f]"
+    using usubst_usubst[of f z Q "Ma[V <- xa]" "Fix f xa Ma"] usubst_usubst[of xa z Q Ma V] av pushF
+    by metis
+  have step: "App (Fix f xa (Ma[Q <- z])) (V[Q <- z]) \<rightarrow> Ma[Q <- z][V[Q <- z] <- xa][Fix f xa (Ma[Q <- z]) <- f]"
+    by (rule beta.FixBeta[OF vV fr])
+  show ?case unfolding push using step subst_comm by simp
 qed(auto intro:beta.intros blocked_inductive)
 
 lemma my_induct[case_names lex]:
@@ -2412,28 +3002,196 @@ proof(rule ccontr)
       using 2 vals_are_normal[of V] steps beta.cases[of M M'] unfolding normal_def
       by (smt (verit, best) MrBNF_ver.num.simps term.distinct(26,27,29,31,68) term.inject(3))
   next
-    case (3 V M)
-    then show ?thesis
-      using 3 vals_are_normal[of V] steps beta.cases[of M M'] unfolding normal_def
-(*
-      by (smt (verit) beta.cases term.distinct(42,43,44,62,70) term.inject(5))
-*)
-      sorry
+    case (3 V M0)
+    show ?thesis using steps unfolding 3(1)
+    proof (cases rule: beta.cases)
+      case (OrdApp2 N N' f x Ma)
+      then show ?thesis using 3(3) unfolding is_Fix_def by auto
+    next
+      case (OrdApp1 Ma Ma' N)
+      then show ?thesis using 3(2) vals_are_normal normal_def by (metis term.inject(5))
+    next
+      case (FixBeta V2 f x Ma)
+      then show ?thesis using 3(3) unfolding is_Fix_def by auto
+    qed auto
   next
-    case (4 V xy M)
-    then show ?thesis sorry
+    case (4 V xy M0)
+    show ?thesis using steps unfolding 4(1)
+    proof (cases rule: beta.cases)
+      case (OrdLet Ma Ma' xy2 Na)
+      then show ?thesis using 4(2) vals_are_normal unfolding normal_def by auto
+    next
+      case (Let V2 W2 xy2 M2)
+      then show ?thesis using 4(3) unfolding is_Pair_def by auto
+    qed auto
+  qed
+qed
+
+lemma stuckEx_not_val: "stuckEx M \<Longrightarrow> \<not> val M"
+  by (cases rule: stuckEx.cases) (auto elim!: val.cases num.cases)
+
+lemma val_ctx_plug: "eval_ctx hole E \<Longrightarrow> val (E[N <- hole]) \<Longrightarrow> val N"
+  apply (binder_induction hole E avoiding: N E rule: eval_ctx.strong_induct)
+  subgoal by simp
+  subgoal by (auto elim!: val.cases num.cases)
+  subgoal by (auto elim!: val.cases num.cases)
+  subgoal by (auto elim!: val.cases num.cases intro: val.intros)
+  subgoal by (auto elim!: val.cases num.cases)
+  subgoal by (auto elim!: val.cases num.cases)
+  subgoal by (auto elim!: val.cases num.cases)
+  subgoal for holea Ea Na xy
+    apply (subst (asm) usubst_simps(9))
+    apply (auto elim!: val.cases num.cases simp: disjoint_iff)
+    done
+  subgoal by (auto elim!: val.cases num.cases)
+  done
+
+lemma ctx_plug_stuckEx_normal: "eval_ctx hole E \<Longrightarrow> stuckEx N \<Longrightarrow> normal (E[N <- hole])"
+proof (binder_induction hole E avoiding: N E rule: eval_ctx.strong_induct)
+  case (1 holea)
+  then show ?case by (simp add: stuckEx_are_normal)
+next
+  case (2 holea Ea Ma f xa)
+  show ?case unfolding normal_def
+  proof safe
+    fix M' assume "(App (Fix f xa Ma) Ea)[N <- holea] \<rightarrow> M'"
+    then have st: "App (Fix f xa Ma) (Ea[N <- holea]) \<rightarrow> M'" using 2(5) by auto
+    from st show False
+    proof (cases rule: beta.cases)
+      case (OrdApp2 N0 N0' f2 x2 M2)
+      then show ?thesis using 2(4)[OF 2(6)] unfolding normal_def by auto
+    next
+      case (OrdApp1 M0 M0' N0)
+      then show ?thesis using vals_are_normal[OF val.intros(4)] unfolding normal_def by (metis term.inject(5))
+    next
+      case (FixBeta V2 f2 x2 M2)
+      then have "val (Ea[N <- holea])" by auto
+      then show ?thesis using val_ctx_plug[OF 2(3)] stuckEx_not_val[OF 2(6)] by auto
+    qed auto
+  qed
+next
+  case (3 holea Ea Na)
+  show ?case unfolding normal_def
+  proof safe
+    fix M' assume "(App Ea Na)[N <- holea] \<rightarrow> M'"
+    then have st: "App (Ea[N <- holea]) (Na[N <- holea]) \<rightarrow> M'" by auto
+    from st show False
+    proof (cases rule: beta.cases)
+      case (OrdApp2 N0 N0' f2 x2 M2)
+      then have "val (Ea[N <- holea])" using val.intros(4) by auto
+      then show ?thesis using val_ctx_plug[OF 3(1)] stuckEx_not_val[OF 3(4)] by auto
+    next
+      case (OrdApp1 M0 M0' N0)
+      then show ?thesis using 3(2)[OF 3(4)] unfolding normal_def by auto
+    next
+      case (FixBeta V2 f2 x2 M2)
+      then have "val (Ea[N <- holea])" using val.intros(4) by auto
+      then show ?thesis using val_ctx_plug[OF 3(1)] stuckEx_not_val[OF 3(4)] by auto
+    qed auto
+  qed
+next
+  case (4 holea Ea)
+  show ?case unfolding normal_def
+  proof safe
+    fix M' assume "(Succ Ea)[N <- holea] \<rightarrow> M'"
+    then have st: "Succ (Ea[N <- holea]) \<rightarrow> M'" by auto
+    from st show False
+      by (cases rule: beta.cases) (use 4(2)[OF 4(3)] normal_def in auto)
+  qed
+next
+  case (5 holea Ea)
+  show ?case unfolding normal_def
+  proof safe
+    fix M' assume "(Pred Ea)[N <- holea] \<rightarrow> M'"
+    then have st: "Pred (Ea[N <- holea]) \<rightarrow> M'" by auto
+    from st show False
+    proof (cases rule: beta.cases)
+      case (OrdPred M0 M0')
+      then show ?thesis using 5(2)[OF 5(3)] unfolding normal_def by auto
+    next
+      case PredZ
+      then have "val (Ea[N <- holea])" using val.intros(2) num.intros(1) by auto
+      then show ?thesis using val_ctx_plug[OF 5(1)] stuckEx_not_val[OF 5(3)] by auto
+    next
+      case (PredS n)
+      then have "val (Ea[N <- holea])" using val.intros(2) num.intros(2) by auto
+      then show ?thesis using val_ctx_plug[OF 5(1)] stuckEx_not_val[OF 5(3)] by auto
+    qed auto
+  qed
+next
+  case (6 holea Ea Na)
+  show ?case unfolding normal_def
+  proof safe
+    fix M' assume "(term.Pair Ea Na)[N <- holea] \<rightarrow> M'"
+    then have st: "term.Pair (Ea[N <- holea]) (Na[N <- holea]) \<rightarrow> M'" by auto
+    from st show False
+    proof (cases rule: beta.cases)
+      case (OrdPair1 M0 M0' N0)
+      then show ?thesis using 6(2)[OF 6(4)] unfolding normal_def by auto
+    next
+      case (OrdPair2 V0 N0 N0')
+      then have "val (Ea[N <- holea])" by auto
+      then show ?thesis using val_ctx_plug[OF 6(1)] stuckEx_not_val[OF 6(4)] by auto
+    qed auto
+  qed
+next
+  case (7 V holea Ea)
+  show ?case unfolding normal_def
+  proof safe
+    fix M' assume "(term.Pair V Ea)[N <- holea] \<rightarrow> M'"
+    then have st: "term.Pair V (Ea[N <- holea]) \<rightarrow> M'" using 7(4) by auto
+    from st show False
+    proof (cases rule: beta.cases)
+      case (OrdPair1 M0 M0' N0)
+      then show ?thesis using 7(1) vals_are_normal unfolding normal_def by (metis term.inject(7))
+    next
+      case (OrdPair2 V0 N0 N0')
+      then show ?thesis using 7(3)[OF 7(5)] unfolding normal_def by auto
+    qed auto
+  qed
+next
+  case (8 holea Ea Na xy)
+  show ?case unfolding normal_def
+  proof safe
+    fix M' assume pre: "(term.Let xy Ea Na)[N <- holea] \<rightarrow> M'"
+    have push: "(term.Let xy Ea Na)[N <- holea] = term.Let xy (Ea[N <- holea]) (Na[N <- holea])"
+      using 8(1,2,6) by (subst usubst_simps(9)) (auto simp: disjoint_iff)
+    from pre have st: "term.Let xy (Ea[N <- holea]) (Na[N <- holea]) \<rightarrow> M'" unfolding push .
+    from st show False
+    proof (cases rule: beta.cases)
+      case (OrdLet M0 M0' xy2 N0)
+      then have "Ea[N <- holea] \<rightarrow> M0'" by auto
+      then show ?thesis using 8(4)[OF 8(7)] unfolding normal_def by auto
+    next
+      case (Let V2 W2 xy2 M2)
+      then have "val (Ea[N <- holea])" using val.intros(3) by auto
+      then show ?thesis using val_ctx_plug[OF 8(3)] stuckEx_not_val[OF 8(7)] by auto
+    qed auto
+  qed
+next
+  case (9 holea Ea Na P)
+  show ?case unfolding normal_def
+  proof safe
+    fix M' assume "(term.If Ea Na P)[N <- holea] \<rightarrow> M'"
+    then have st: "term.If (Ea[N <- holea]) (Na[N <- holea]) (P[N <- holea]) \<rightarrow> M'" by auto
+    from st show False
+    proof (cases rule: beta.cases)
+      case (OrdIf M0 M0' N0 P0)
+      then show ?thesis using 9(2)[OF 9(5)] unfolding normal_def by auto
+    next
+      case (Ifz N0 P0)
+      then have "val (Ea[N <- holea])" using val.intros(2) num.intros(1) by auto
+      then show ?thesis using val_ctx_plug[OF 9(1)] stuckEx_not_val[OF 9(5)] by auto
+    next
+      case (Ifs n N0 P0)
+      then have "val (Ea[N <- holea])" using val.intros(2) num.intros(2) by auto
+      then show ?thesis using val_ctx_plug[OF 9(1)] stuckEx_not_val[OF 9(5)] by auto
+    qed auto
   qed
 qed
 
 lemma stucks_are_normal: "stuck M \<Longrightarrow> normal M"
-proof(rule ccontr)
-  assume "stuck M"
-  then obtain hole E N where ctx: "eval_ctx hole E" and "M = E[N <- hole]" and "stuckEx N"
-    unfolding stuck_def by auto
-  assume "\<not> normal M"
-  then obtain M' where "M \<rightarrow> M'" unfolding normal_def by auto
-  then show False sorry 
-qed
+  unfolding stuck_def using ctx_plug_stuckEx_normal by auto
 
 lemma dset_finite: "finite (dset xy)"
   by (simp add: dset_alt)
