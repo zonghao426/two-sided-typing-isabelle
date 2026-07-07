@@ -3848,8 +3848,8 @@ proof(rule ccontr)
     case (5 V)
     then show ?thesis
       using vals_are_normal[of V] steps beta.cases[of M M'] num.intros unfolding normal_def
-      sledgehammer
-      sorry
+      by (smt (verit, best) term.distinct(10,19,21,23,67) term.inject(2))
+
   qed
 qed
 
@@ -4309,7 +4309,7 @@ proof -
           case B
           then obtain W where "val W" and "V'[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
           then have "\<not> num W" using 5 b5_prop_not_num[of V] by blast
-          then have "stuckEx (Pred W)" using \<open>val W\<close> stuckEx.intros by auto
+          then have "stuckEx (Pred W)" using \<open>val W\<close> stuckEx.intros by blast
           then have "stuck (Pred W)"
             using eval_ctx.intros(1) stuck_def by force
           then have "getStuck (Pred V'[P <- z])" unfolding getStuck_def
