@@ -1,5 +1,5 @@
 theory MrBNF_ver
-  imports Binders.MRBNF_Recursor "Case_Studies.FixedCountableVars"
+  imports Binders.MRBNF_Recursor "Case_Studies.FixedCountableVars" "HOL-Library.FSet"
 begin
 
 section \<open>Types and Terms\<close>
@@ -358,44 +358,9 @@ lemma term_strong_induct: "\<forall>\<rho>. |K \<rho> :: 'a ::var set| <o |UNIV 
 (\<And>x1 x2 \<rho>. \<forall>\<rho>. P x1 \<rho> \<Longrightarrow> \<forall>\<rho>. P x2 \<rho> \<Longrightarrow> P (term.Pair x1 x2) \<rho>) \<Longrightarrow>
 (\<And>x1 x2 x3 \<rho>. dset x1 \<inter> K \<rho> = {} \<Longrightarrow> \<forall>\<rho>. P x2 \<rho> \<Longrightarrow> \<forall>\<rho>. P x3 \<rho> \<Longrightarrow> P (term.Let x1 x2 x3) \<rho>) \<Longrightarrow> \<forall>\<rho>. P t \<rho>"
   by (rule term.strong_induct) auto
-(*
-lemma premute_term_subst: "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV :: 'a ::var set| \<Longrightarrow> |SSupp Var f :: 'a set| <o |UNIV :: 'a set| \<Longrightarrow> id_on (FVars M - SSupp Var f) \<sigma> \<Longrightarrow>
-  subst f (permute_term \<sigma> M) = subst (f o \<sigma>) M"
-  apply (binder_induction M avoiding: M "IImsupp Var FVars f" "imsupp \<sigma>" rule: term_strong_induct)
-            apply (metis SSupp_Inj_bound term.IImsupp_Sb_bound term.Sb_comp_Inj)
-  using imsupp_supp_bound infinite_UNIV apply blast
-          apply (auto simp: Un_Diff id_on_Un bij_implies_inject)
-   apply (subst (1 2) term.subst)
-  apply blast
-  sorry
-  apply (simp add: id_on_def)
-*)
-(*
-  apply (smt (verit, best) Diff_iff Diff_insert2 Diff_insert_absorb bij_id_imsupp
-      id_on_def in_imsupp not_in_imsupp_same not_in_supp_alt usubst_simps(7))
-  apply (smt (verit, del_insts) Diff_iff Diff_insert2 Diff_triv Int_Un_emptyI1 Int_commute
-      Int_emptyD Int_image_imsupp One_nat_def Sup_UNIV Sup_UNIV bij_imsupp_supp_ne
-      disjoint_iff_not_equal dmap_def dmap_def dpair.map_id0 dpair.rel_Grp dpair.set_map
-      dset_def fun.rel_eq fun.rel_eq id_on_def in_imsupp not_in_imsupp_same
-      not_in_supp_alt set_diff_eq term.FVars_permute term.inject(8) term.map(9)
-      term.permute(9) term.vvsubst_permute usubst_simps(9))
-  done
-*)
 
 lemma premute_term_usubst: "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV :: 'a ::var set| \<Longrightarrow> id_on (FVars M - {x::'a}) \<sigma> \<Longrightarrow>
   (permute_term \<sigma> M)[V <- \<sigma> x] = M[V <- x]"
-(*
-  unfolding usubst_def
-  apply (subst premute_term_subst)
-      apply (auto simp: bij_implies_inject id_on_def SSupp_def intro!: term.Sb_cong)
-  subgoal for y
-    apply (cases "x = y")
-     apply auto
-    sledgehammer
-
-  sorry
-*)
-
   apply (binder_induction M avoiding: M V x "supp \<sigma>" rule: term_strong_induct)
            apply (auto simp: Un_Diff id_on_Un bij_implies_inject)
   apply (smt (verit, best) Diff_iff Diff_insert2 Diff_insert_absorb bij_id_imsupp
@@ -407,7 +372,6 @@ lemma premute_term_usubst: "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |U
       not_in_supp_alt set_diff_eq term.FVars_permute term.inject(8) term.map(9)
       term.permute(9) term.vvsubst_permute usubst_simps(9))
   done
-
 
 lemma fresh_usubst[simp]: "x \<notin> FVars t \<Longrightarrow> x \<notin> FVars s \<Longrightarrow> x \<notin> FVars (t[s <- y])"
   by (binder_induction t avoiding: t s y rule: term_strong_induct)
@@ -451,21 +415,6 @@ lemma premute_term_usubst2: "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |
   apply (meson disjoint_iff_not_equal not_in_supp_alt)
   apply (metis disjoint_iff_not_equal not_in_supp_alt)
   done
-
-text \<open>The following lemma is FALSE as stated (and now unused: the reworked
-  @{text beta_deterministic} proof goes through @{thm term.inject(8)} plus
-  @{text premute_term_usubst2} instead). Counterexample to the \<open>\<Longrightarrow>\<close> direction:
-  if an atom \<open>b \<in> dset xy' \<inter> (A - dset xy)\<close>, then any witness \<open>f\<close> with
-  \<open>dmap f xy = xy'\<close> maps some \<open>a \<in> dset xy\<close> to \<open>b\<close>, while \<open>id_on (\<dots> \<union> A - dset xy) f\<close>
-  forces \<open>f b = b\<close> --- contradicting injectivity. A correct version needs an extra
-  freshness hypothesis such as \<open>dset xy' \<inter> A = {}\<close>.\<close>
-(*
-lemma Let_fresh_inject:
-  assumes "|A| <o |UNIV :: 'a set|"
-  shows "(term.Let xy M N = term.Let xy' M' N') =
-   (\<exists>f. bij f \<and> |supp f :: 'a :: var set| <o |UNIV :: 'a set| \<and> id_on (FVars N \<union> A - dset xy) f \<and> dmap f xy = xy' \<and> M = M' \<and> permute_term f N = N')"
-  sorry
-*)
 
 lemma dfst_dmap[simp]: "bij f \<Longrightarrow> dfst (dmap f xy) = f (dfst xy)"
   by transfer auto
@@ -1559,9 +1508,9 @@ inductive disjunction :: "type \<Rightarrow> type \<Rightarrow> bool" (infix "||
 | "Prod _ _ || OnlyTo _  _"
 | "A || B \<Longrightarrow> B || A"
 
-notation Set.insert (infixr ";" 50)
+notation finsert (infixr ";" 50)
 
-inductive judgement :: "'var::var typing set \<Rightarrow> 'var::var typing set \<Rightarrow> bool" (infix "\<turnstile>" 10) where
+inductive judgement :: "'var::var typing fset \<Rightarrow> 'var::var typing fset \<Rightarrow> bool" (infix "\<turnstile>" 10) where
   Id : "(Var x :. A) ; \<Gamma> \<turnstile> (Var x :. A) ; \<Delta>"
 | ZeroR : "\<Gamma> \<turnstile> (Zero :. Nat) ; \<Delta>"
 | SuccR: "\<Gamma> \<turnstile> (M :. Nat) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (Succ M :. Nat) ; \<Delta>"
@@ -1609,19 +1558,53 @@ text \<open>CAVEAT (2026-07-07): with the ORIGINAL binder_datatypes library, the
   replaced by a genuine equivariance proof (rule induction under the image action, analogous to
   @{text beta_equiv_ob}); until then the currently loaded (pre-fix) heap still shows the old
   id-action obligation, so we keep the sorry.\<close>
-binder_inductive (no_auto_equiv) judgement
+
+lemmas [equiv] = term.permute map_prod_simp
+
+lemma finsert_map_prod_equiv[equiv]:
+  fixes f :: "'a::var \<Rightarrow> 'a"
+  assumes "bij f" "|supp f| <o |UNIV::'a set|"
+  shows "fimage (map_prod (permute_term f) id) (finsert p G)
+       = finsert (map_prod (permute_term f) id p) (fimage (map_prod (permute_term f) id) G)"
+  by simp
+
+lemma fimage_map_prod_cancel[equiv]:
+  fixes f :: "'a::var \<Rightarrow> 'a"
+  assumes "bij f" "|supp f| <o |UNIV::'a set|"
+  shows "fimage (map_prod (permute_term (inv f)) id) (fimage (map_prod (permute_term f) id) G) = G"
+proof -
+  have "(map_prod (permute_term (inv f)) id \<circ> map_prod (permute_term f) id) x = id x"
+    for x :: "'a typing"
+    by (cases x)
+       (simp add: map_prod_simp
+          term.permute_comp[OF assms bij_imp_bij_inv[OF assms(1)] supp_inv_bound[OF assms]]
+          inv_o_simp1[OF assms(1)] term.permute_id)
+  then have "map_prod (permute_term (inv f)) id \<circ> map_prod (permute_term f) id = id" by auto
+  then show ?thesis by (metis fset.map_comp fset.map_id)
+qed
+
+lemma permute_term_inv_cancel[equiv]:
+  fixes f :: "'a::var \<Rightarrow> 'a"
+  assumes "bij f" "|supp f| <o |UNIV::'a set|"
+  shows "permute_term (inv f) (permute_term f N) = N"
+  by (simp add: term.permute_comp[OF assms bij_imp_bij_inv[OF assms(1)] supp_inv_bound[OF assms]]
+        inv_o_simp1[OF assms(1)] term.permute_id)
+
+lemmas [equiv] = dfst_dmap dsnd_dmap
+
+binder_inductive judgement
   sorry
 
 thm judgement.strong_induct
 
 lemma weakenL: "\<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (M :. A) ; \<Gamma> \<turnstile> \<Delta>"
   apply (induction \<Gamma> \<Delta> rule:judgement.induct)
-  apply (auto intro: judgement.intros simp add: insert_commute[of "M :. A" _])
+  apply (auto intro: judgement.intros simp add: finsert_commute[of "M :. A" _])
   done
 
 lemma weakenR: "\<Gamma> \<turnstile> \<Delta> \<Longrightarrow> \<Gamma>  \<turnstile> (M :. A) ; \<Delta>"
   apply (induction \<Gamma> \<Delta> rule:judgement.induct)
-  apply (auto intro: judgement.intros simp add: insert_commute[of "M :. A" _])
+  apply (auto intro: judgement.intros simp add: finsert_commute[of "M :. A" _])
   done
 
 section \<open>Semantics\<close>
@@ -1652,8 +1635,8 @@ inductive typing_semanticsL :: "'var::var valuation \<Rightarrow> 'var typing \<
 inductive typing_semanticsR :: "'var::var valuation \<Rightarrow> 'var typing \<Rightarrow> bool" where
   "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<Longrightarrow> typing_semanticsR \<theta> (M :. A)"
 
-inductive semantic_judgement :: "'var::var typing set \<Rightarrow> 'var typing set \<Rightarrow> bool" (infix "\<Turnstile>" 10) where
-  "\<forall>\<theta>. (\<forall>\<tau>\<in>L. typing_semanticsL \<theta> \<tau>) \<longrightarrow> (\<forall>\<tau>\<in>R. typing_semanticsR \<theta> \<tau>) \<Longrightarrow> L \<Turnstile> R"
+inductive semantic_judgement :: "'var::var typing fset \<Rightarrow> 'var typing fset \<Rightarrow> bool" (infix "\<Turnstile>" 10) where
+  "\<forall>\<theta>. (\<forall>\<tau>. \<tau> |\<in>| L \<longrightarrow> typing_semanticsL \<theta> \<tau>) \<longrightarrow> (\<forall>\<tau>. \<tau> |\<in>| R \<longrightarrow> typing_semanticsR \<theta> \<tau>) \<Longrightarrow> L \<Turnstile> R"
 
 section \<open>B2\<close>
 
@@ -4149,7 +4132,7 @@ proof -
       then obtain F' hole' where 
         "\<forall>N. hole' \<notin> FVars N \<longrightarrow> eval_ctx hole' F'[N <- z]" and
         new_ctx: "R = F'[Var z <- hole']" and
-        fresh_hole: "hole' \<notin> (z ; FVars P)"
+        fresh_hole: "hole' \<notin> insert z (FVars P)"
         using finite_FVars blocked_fresh_hole[of "FVars P" z R] by auto
       then have FP: "eval_ctx hole' F'[P <- z]" by simp
       from True have "Q = N" using \<open>Q'[N <- z] = Q\<close> by simp
