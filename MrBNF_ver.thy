@@ -216,7 +216,7 @@ proof -
   qed
   have b1: "\<And>x u::'a term. |SSupp Var (Var(x := u)) :: 'a set| <o |UNIV::'a set|"
     by (rule ordLeq_ordLess_trans[OF card_of_mono1[OF SSupp_term_fun_upd]])
-       (auto intro!: finite_ordLess_infinite2 simp: infinite_UNIV)
+       (auto intro!: finite_ordLess_infinite2)
   have fun_eq: "subst (Var \<circ> \<sigma>) \<circ> Var(y := s) = subst (Var (\<sigma> y := subst (Var \<circ> \<sigma>) s)) \<circ> (Var \<circ> \<sigma>)"
   proof (rule ext)
     fix z show "(subst (Var \<circ> \<sigma>) \<circ> Var(y := s)) z = (subst (Var (\<sigma> y := subst (Var \<circ> \<sigma>) s)) \<circ> (Var \<circ> \<sigma>)) z"
@@ -721,7 +721,7 @@ lemma beta_deterministic:
       proof -
         have "dsnd xy \<notin> FVars V" using prems(6) dsel_dset(2) by blast
         moreover have "h (dsnd xy) \<notin> FVars V"
-          using Let(5) V2 hsnd dsel_dset(2) by blast
+          using Let(5) V2 hsnd dsel_dset(2) by force
         ultimately show ?thesis by blast
       qed
       have "N' = (permute_term h M)[V <- h (dfst xy)][W <- h (dsnd xy)]"
@@ -1458,7 +1458,7 @@ lemma subst_Fix_inversion:
     have injfa: "\<And>a b. fa a = fa b \<Longrightarrow> a = b" using bfa by (simp add: bij_implies_inject)
     define \<sigma> where "\<sigma> \<equiv> x \<leftrightarrow> fa x"
     have bs: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|"
-      unfolding \<sigma>_def by (auto simp: Swapping.bij_swap Swapping.supp_swap_bound infinite_UNIV)
+      unfolding \<sigma>_def by auto
     define f' where "f' \<equiv> \<sigma> \<circ> fa"
     have bf': "bij f'" unfolding f'_def using bfa bs(1) by (rule bij_comp)
     have sf': "|supp f'| <o |UNIV::'a set|"
@@ -1469,18 +1469,18 @@ lemma subst_Fix_inversion:
       unfolding f'_def \<sigma>_def using prems(12) injfa[of x1 x] prems(2) by (metis comp_apply swap_simps(3))
     have f'x2: "f' x2 = fa x2"
       unfolding f'_def \<sigma>_def using prems(14) injfa[of x2 x] prems(7) by (metis comp_apply swap_simps(3))
-    have f'x: "f' x = x" unfolding f'_def \<sigma>_def by (simp add: swap_simps)
+    have f'x: "f' x = x" unfolding f'_def \<sigma>_def by simp
     have f'other: "\<And>w. w \<in> FVars x3 \<Longrightarrow> w \<noteq> x \<Longrightarrow> w \<notin> {x1, x2} \<Longrightarrow> f' w = w"
     proof -
       fix w assume w: "w \<in> FVars x3" "w \<noteq> x" "w \<notin> {x1, x2}"
       then have faw: "fa w = w" using faid by auto
       have "w \<noteq> fa x" using injfa[of w x] faw w(2) by auto
-      then show "f' w = w" unfolding f'_def \<sigma>_def using faw w(2) by (simp add: swap_simps)
+      then show "f' w = w" unfolding f'_def \<sigma>_def using faw w(2) by simp
     qed
     have f'id: "id_on (FVars x3 - {x2, x1}) f'"
       unfolding id_on_def using f'other f'x by auto
     define Q' where "Q' \<equiv> permute_term f' x3"
-    have ss_id: "\<sigma> \<circ> \<sigma> = id" unfolding \<sigma>_def by (rule ext) (auto simp: swap_simps)
+    have ss_id: "\<sigma> \<circ> \<sigma> = id" unfolding \<sigma>_def by (rule ext) auto
     have comp_eq: "\<sigma> \<circ> f' = fa" unfolding f'_def comp_assoc[symmetric] ss_id by simp
     have pQ': "permute_term \<sigma> Q' = permute_term fa x3"
       unfolding Q'_def using term.permute_comp bs bf' sf' comp_eq by metis
@@ -1508,16 +1508,16 @@ lemma subst_Fix_inversion:
         then have y3: "y \<in> f' ` FVars x3" unfolding Q'_def term.FVars_permute[OF bf' sf'] by auto
         show "\<sigma> y = y"
         proof (cases "fa x = x")
-          case True then show ?thesis unfolding \<sigma>_def using y(2) by (simp add: swap_simps)
+          case True then show ?thesis unfolding \<sigma>_def using y(2) by simp
         next
           case False
-          then have "y \<noteq> fa x" using faxQ' y3 by (metis imageI image_iff)
-          then show ?thesis unfolding \<sigma>_def using y(2) by (simp add: swap_simps)
+          then have "y \<noteq> fa x" using faxQ' y3 by metis
+          then show ?thesis unfolding \<sigma>_def using y(2) by simp
         qed
       qed
       then show ?thesis unfolding id_on_def by auto
     qed
-    have sx: "\<sigma> x = fa x" unfolding \<sigma>_def by (simp add: swap_simps)
+    have sx: "\<sigma> x = fa x" unfolding \<sigma>_def by simp
     have stepA: "(permute_term fa x3)[t <- fa x] = permute_term fa (x3[t <- x])"
     proof (cases "x \<in> FVars x3")
       case True
@@ -1530,10 +1530,10 @@ lemma subst_Fix_inversion:
       show ?thesis unfolding permute_usubst[OF bfa sfa] fat ..
     next
       case False
-      then have idle: "x3[t <- x] = x3" by (simp add: subst_idle)
+      then have idle: "x3[t <- x] = x3" by simp
       have "fa x \<notin> FVars (permute_term fa x3)"
         unfolding term.FVars_permute[OF bfa sfa] using False injfa by auto
-      then show ?thesis unfolding idle by (simp add: subst_idle)
+      then show ?thesis unfolding idle by simp
     qed
     have chain: "Q'[t <- x] = permute_term fa (x3[t <- x])"
       using premute_term_usubst[OF bs(1) bs(2) idQ'] pQ' sx stepA by metis
@@ -1563,7 +1563,7 @@ lemma subst_Let_inversion:
     have injf: "\<And>a b. f a = f b \<Longrightarrow> a = b" using bf by (simp add: bij_implies_inject)
     define \<sigma> where "\<sigma> \<equiv> x \<leftrightarrow> f x"
     have bs: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|"
-      unfolding \<sigma>_def by (auto simp: Swapping.bij_swap Swapping.supp_swap_bound infinite_UNIV)
+      unfolding \<sigma>_def by auto
     define f' where "f' \<equiv> \<sigma> \<circ> f"
     have bf': "bij f'" unfolding f'_def using bf bs(1) by (rule bij_comp)
     have sf': "|supp f'| <o |UNIV::'a set|"
@@ -1577,20 +1577,20 @@ lemma subst_Let_inversion:
       unfolding f'_def \<sigma>_def using fd1x injf[of "dfst x1" x] d1x by (metis comp_apply swap_simps(3))
     have f'd2: "f' (dsnd x1) = f (dsnd x1)"
       unfolding f'_def \<sigma>_def using fd2x injf[of "dsnd x1" x] d2x by (metis comp_apply swap_simps(3))
-    have f'x: "f' x = x" unfolding f'_def \<sigma>_def by (simp add: swap_simps)
+    have f'x: "f' x = x" unfolding f'_def \<sigma>_def by simp
     have f'other: "\<And>w. w \<in> FVars x3 \<Longrightarrow> w \<noteq> x \<Longrightarrow> w \<notin> dset x1 \<Longrightarrow> f' w = w"
     proof -
       fix w assume w: "w \<in> FVars x3" "w \<noteq> x" "w \<notin> dset x1"
       then have fw: "f w = w" using fid by auto
       have "w \<noteq> f x" using injf[of w x] fw w(2) by auto
-      then show "f' w = w" unfolding f'_def \<sigma>_def using fw w(2) by (simp add: swap_simps)
+      then show "f' w = w" unfolding f'_def \<sigma>_def using fw w(2) by simp
     qed
     have f'id: "id_on (FVars x3 - dset x1) f'"
       unfolding id_on_def using f'other f'x by auto
     have dm: "dmap f' x1 = dmap f x1"
       by (rule dpair_eqI) (simp_all add: dfst_dmap[OF bf'] dsnd_dmap[OF bf'] dfst_dmap[OF bf] dsnd_dmap[OF bf] f'd1 f'd2)
     define Q' where "Q' \<equiv> permute_term f' x3"
-    have ss_id: "\<sigma> \<circ> \<sigma> = id" unfolding \<sigma>_def by (rule ext) (auto simp: swap_simps)
+    have ss_id: "\<sigma> \<circ> \<sigma> = id" unfolding \<sigma>_def by (rule ext) auto
     have comp_eq: "\<sigma> \<circ> f' = f" unfolding f'_def comp_assoc[symmetric] ss_id by simp
     have pQ': "permute_term \<sigma> Q' = permute_term f x3"
       unfolding Q'_def using term.permute_comp bs bf' sf' comp_eq by metis
@@ -1619,16 +1619,16 @@ lemma subst_Let_inversion:
         then have y3: "y \<in> f' ` FVars x3" unfolding Q'_def term.FVars_permute[OF bf' sf'] by auto
         show "\<sigma> y = y"
         proof (cases "f x = x")
-          case True then show ?thesis unfolding \<sigma>_def using y(2) by (simp add: swap_simps)
+          case True then show ?thesis unfolding \<sigma>_def using y(2) by simp
         next
           case False
-          then have "y \<noteq> f x" using fxQ' y3 by (metis imageI image_iff)
-          then show ?thesis unfolding \<sigma>_def using y(2) by (simp add: swap_simps)
+          then have "y \<noteq> f x" using fxQ' y3 by metis
+          then show ?thesis unfolding \<sigma>_def using y(2) by simp
         qed
       qed
       then show ?thesis unfolding id_on_def by auto
     qed
-    have sx: "\<sigma> x = f x" unfolding \<sigma>_def by (simp add: swap_simps)
+    have sx: "\<sigma> x = f x" unfolding \<sigma>_def by simp
     have stepA: "(permute_term f x3)[t <- f x] = permute_term f (x3[t <- x])"
     proof (cases "x \<in> FVars x3")
       case True
@@ -1641,10 +1641,10 @@ lemma subst_Let_inversion:
       show ?thesis unfolding permute_usubst[OF bf sf] ft ..
     next
       case False
-      then have idle: "x3[t <- x] = x3" by (simp add: subst_idle)
+      then have idle: "x3[t <- x] = x3" by simp
       have "f x \<notin> FVars (permute_term f x3)"
         unfolding term.FVars_permute[OF bf sf] using False injf by auto
-      then show ?thesis unfolding idle by (simp add: subst_idle)
+      then show ?thesis unfolding idle by simp
     qed
     have chain: "Q'[t <- x] = permute_term f (x3[t <- x])"
       using premute_term_usubst[OF bs(1) bs(2) idQ'] pQ' sx stepA by metis
@@ -1928,7 +1928,7 @@ proof -
     have inv1: "bij (inv g)" "|supp (inv g)| <o |UNIV::'a set|"
       using g(1,2) by (auto simp: supp_inv_bound)
     have dmap_inv: "dmap (inv g) (dmap g xy) = xy"
-      by (rule dpair_eqI) (simp_all add: dfst_dmap dsnd_dmap g(1) inv1(1) bij_imp_bij_inv)
+      by (rule dpair_eqI) (simp_all add: g(1) inv1(1))
     have perm_inv: "permute_term (inv g) (permute_term g (B[N <- z])) = B[N <- z]"
       using permute_term_inv[OF g(1,2)] .
     have idon: "id_on (FVars (permute_term g (B[N <- z])) - dset (dmap g xy)) (inv g)"
@@ -1976,7 +1976,7 @@ proof -
   have hz: "hole' \<noteq> z" using h' by auto
   have push: "(term.Let xy E' S)[Var z <- hole'] = term.Let xy (E'[Var z <- hole']) (S[Var z <- hole'])"
     by (rule usubst_Let) (use h' hz assms(2) in auto)
-  have Sidle: "S[Var z <- hole'] = S" using h' by (auto simp: subst_idle)
+  have Sidle: "S[Var z <- hole'] = S" using h' by auto
   show ?thesis unfolding blocked_def
     apply (rule exI[of _ hole'], rule exI[of _ "term.Let xy E' S"])
     using ctxL push Sidle R' by auto
@@ -3006,13 +3006,13 @@ proof(rule ccontr)
     show ?thesis using steps unfolding 3(1)
     proof (cases rule: beta.cases)
       case (OrdApp2 N N' f x Ma)
-      then show ?thesis using 3(3) unfolding is_Fix_def by auto
+      then show ?thesis using 3(3) unfolding is_Fix_def by (meson term.inject(5))
     next
       case (OrdApp1 Ma Ma' N)
-      then show ?thesis using 3(2) vals_are_normal normal_def by (metis term.inject(5))
+      then show ?thesis using 3(2) normal_def vals_are_normal by auto
     next
       case (FixBeta V2 f x Ma)
-      then show ?thesis using 3(3) unfolding is_Fix_def by auto
+      then show ?thesis using 3(3) unfolding is_Fix_def by (meson term.inject(5))
     qed auto
   next
     case (4 V xy M0)
@@ -3028,22 +3028,24 @@ proof(rule ccontr)
 qed
 
 lemma stuckEx_not_val: "stuckEx M \<Longrightarrow> \<not> val M"
-  by (cases rule: stuckEx.cases) (auto elim!: val.cases num.cases)
+  apply (cases rule: stuckEx.cases)
+      apply (auto 0 3 elim: val.cases num.cases)
+  done
 
 lemma val_ctx_plug: "eval_ctx hole E \<Longrightarrow> val (E[N <- hole]) \<Longrightarrow> val N"
   apply (binder_induction hole E avoiding: N E rule: eval_ctx.strong_induct)
   subgoal by simp
-  subgoal by (auto elim!: val.cases num.cases)
-  subgoal by (auto elim!: val.cases num.cases)
-  subgoal by (auto elim!: val.cases num.cases intro: val.intros)
-  subgoal by (auto elim!: val.cases num.cases)
-  subgoal by (auto elim!: val.cases num.cases)
-  subgoal by (auto elim!: val.cases num.cases)
+  subgoal by (auto 0 3 elim: val.cases num.cases)
+  subgoal by (auto 0 3 elim: val.cases num.cases)
+  subgoal by (force elim: val.cases num.cases intro: val.intros)
+  subgoal by (auto 0 3 elim: val.cases num.cases)
+  subgoal by (auto 0 3 elim: val.cases num.cases)
+  subgoal by (auto 0 3 elim: val.cases num.cases)
   subgoal for holea Ea Na xy
     apply (subst (asm) usubst_simps(9))
-    apply (auto elim!: val.cases num.cases simp: disjoint_iff)
+    apply (auto 0 3 elim: val.cases num.cases simp: disjoint_iff)
     done
-  subgoal by (auto elim!: val.cases num.cases)
+  subgoal by (auto 0 3 elim: val.cases num.cases)
   done
 
 lemma ctx_plug_stuckEx_normal: "eval_ctx hole E \<Longrightarrow> stuckEx N \<Longrightarrow> normal (E[N <- hole])"
@@ -3055,18 +3057,18 @@ next
   show ?case unfolding normal_def
   proof safe
     fix M' assume "(App (Fix f xa Ma) Ea)[N <- holea] \<rightarrow> M'"
-    then have st: "App (Fix f xa Ma) (Ea[N <- holea]) \<rightarrow> M'" using 2(5) by auto
+    then have st: "App (Fix f xa Ma) (Ea[N <- holea]) \<rightarrow> M'" using 2(4,5) by auto
     from st show False
     proof (cases rule: beta.cases)
       case (OrdApp2 N0 N0' f2 x2 M2)
-      then show ?thesis using 2(4)[OF 2(6)] unfolding normal_def by auto
+      then show ?thesis using 2(6)[OF 2(5)] unfolding normal_def by auto
     next
       case (OrdApp1 M0 M0' N0)
       then show ?thesis using vals_are_normal[OF val.intros(4)] unfolding normal_def by (metis term.inject(5))
     next
       case (FixBeta V2 f2 x2 M2)
       then have "val (Ea[N <- holea])" by auto
-      then show ?thesis using val_ctx_plug[OF 2(3)] stuckEx_not_val[OF 2(6)] by auto
+      then show ?thesis using val_ctx_plug[OF 2(3)] stuckEx_not_val[OF 2(5)] by blast
     qed auto
   qed
 next
@@ -3079,14 +3081,14 @@ next
     proof (cases rule: beta.cases)
       case (OrdApp2 N0 N0' f2 x2 M2)
       then have "val (Ea[N <- holea])" using val.intros(4) by auto
-      then show ?thesis using val_ctx_plug[OF 3(1)] stuckEx_not_val[OF 3(4)] by auto
+      then show ?thesis using val_ctx_plug[OF 3(1)] stuckEx_not_val[OF 3(3)] by blast
     next
       case (OrdApp1 M0 M0' N0)
-      then show ?thesis using 3(2)[OF 3(4)] unfolding normal_def by auto
+      then show ?thesis using 3(4)[OF 3(3)] unfolding normal_def by auto
     next
       case (FixBeta V2 f2 x2 M2)
       then have "val (Ea[N <- holea])" using val.intros(4) by auto
-      then show ?thesis using val_ctx_plug[OF 3(1)] stuckEx_not_val[OF 3(4)] by auto
+      then show ?thesis using val_ctx_plug[OF 3(1)] stuckEx_not_val[OF 3(3)] by blast
     qed auto
   qed
 next
@@ -3096,7 +3098,7 @@ next
     fix M' assume "(Succ Ea)[N <- holea] \<rightarrow> M'"
     then have st: "Succ (Ea[N <- holea]) \<rightarrow> M'" by auto
     from st show False
-      by (cases rule: beta.cases) (use 4(2)[OF 4(3)] normal_def in auto)
+      by (cases rule: beta.cases) (use 4(3)[OF 4(2)] normal_def in auto)
   qed
 next
   case (5 holea Ea)
@@ -3107,15 +3109,15 @@ next
     from st show False
     proof (cases rule: beta.cases)
       case (OrdPred M0 M0')
-      then show ?thesis using 5(2)[OF 5(3)] unfolding normal_def by auto
+      then show ?thesis using 5(3)[OF 5(2)] unfolding normal_def by auto
     next
       case PredZ
       then have "val (Ea[N <- holea])" using val.intros(2) num.intros(1) by auto
-      then show ?thesis using val_ctx_plug[OF 5(1)] stuckEx_not_val[OF 5(3)] by auto
+      then show ?thesis using val_ctx_plug[OF 5(1)] stuckEx_not_val[OF 5(2)] by blast
     next
-      case (PredS n)
+      case (PredS)
       then have "val (Ea[N <- holea])" using val.intros(2) num.intros(2) by auto
-      then show ?thesis using val_ctx_plug[OF 5(1)] stuckEx_not_val[OF 5(3)] by auto
+      then show ?thesis using val_ctx_plug[OF 5(1)] stuckEx_not_val[OF 5(2)] by blast
     qed auto
   qed
 next
@@ -3127,11 +3129,11 @@ next
     from st show False
     proof (cases rule: beta.cases)
       case (OrdPair1 M0 M0' N0)
-      then show ?thesis using 6(2)[OF 6(4)] unfolding normal_def by auto
+      then show ?thesis using 6(4)[OF 6(3)] unfolding normal_def by auto
     next
       case (OrdPair2 V0 N0 N0')
       then have "val (Ea[N <- holea])" by auto
-      then show ?thesis using val_ctx_plug[OF 6(1)] stuckEx_not_val[OF 6(4)] by auto
+      then show ?thesis using val_ctx_plug[OF 6(1)] stuckEx_not_val[OF 6(3)] by blast
     qed auto
   qed
 next
@@ -3139,14 +3141,14 @@ next
   show ?case unfolding normal_def
   proof safe
     fix M' assume "(term.Pair V Ea)[N <- holea] \<rightarrow> M'"
-    then have st: "term.Pair V (Ea[N <- holea]) \<rightarrow> M'" using 7(4) by auto
+    then have st: "term.Pair V (Ea[N <- holea]) \<rightarrow> M'" using 7(3) by auto
     from st show False
     proof (cases rule: beta.cases)
       case (OrdPair1 M0 M0' N0)
       then show ?thesis using 7(1) vals_are_normal unfolding normal_def by (metis term.inject(7))
     next
       case (OrdPair2 V0 N0 N0')
-      then show ?thesis using 7(3)[OF 7(5)] unfolding normal_def by auto
+      then show ?thesis using 7(5)[OF 7(4)] unfolding normal_def by auto
     qed auto
   qed
 next
@@ -3155,17 +3157,17 @@ next
   proof safe
     fix M' assume pre: "(term.Let xy Ea Na)[N <- holea] \<rightarrow> M'"
     have push: "(term.Let xy Ea Na)[N <- holea] = term.Let xy (Ea[N <- holea]) (Na[N <- holea])"
-      using 8(1,2,6) by (subst usubst_simps(9)) (auto simp: disjoint_iff)
+      using 8(1,2,5) by (subst usubst_simps(9)) (auto simp: disjoint_iff)
     from pre have st: "term.Let xy (Ea[N <- holea]) (Na[N <- holea]) \<rightarrow> M'" unfolding push .
     from st show False
     proof (cases rule: beta.cases)
       case (OrdLet M0 M0' xy2 N0)
       then have "Ea[N <- holea] \<rightarrow> M0'" by auto
-      then show ?thesis using 8(4)[OF 8(7)] unfolding normal_def by auto
+      then show ?thesis using 8(7)[OF 8(6)] unfolding normal_def by auto
     next
       case (Let V2 W2 xy2 M2)
       then have "val (Ea[N <- holea])" using val.intros(3) by auto
-      then show ?thesis using val_ctx_plug[OF 8(3)] stuckEx_not_val[OF 8(7)] by auto
+      then show ?thesis using val_ctx_plug[OF 8(3)] stuckEx_not_val[OF 8(6)] by blast
     qed auto
   qed
 next
@@ -3177,15 +3179,15 @@ next
     from st show False
     proof (cases rule: beta.cases)
       case (OrdIf M0 M0' N0 P0)
-      then show ?thesis using 9(2)[OF 9(5)] unfolding normal_def by auto
+      then show ?thesis using 9(5)[OF 9(4)] unfolding normal_def by auto
     next
-      case (Ifz N0 P0)
+      case (Ifz N0)
       then have "val (Ea[N <- holea])" using val.intros(2) num.intros(1) by auto
-      then show ?thesis using val_ctx_plug[OF 9(1)] stuckEx_not_val[OF 9(5)] by auto
+      then show ?thesis using val_ctx_plug[OF 9(1)] stuckEx_not_val[OF 9(4)] by blast
     next
-      case (Ifs n N0 P0)
+      case (Ifs n N0)
       then have "val (Ea[N <- holea])" using val.intros(2) num.intros(2) by auto
-      then show ?thesis using val_ctx_plug[OF 9(1)] stuckEx_not_val[OF 9(5)] by auto
+      then show ?thesis using val_ctx_plug[OF 9(1)] stuckEx_not_val[OF 9(4)] by blast
     qed auto
   qed
 qed
