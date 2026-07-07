@@ -184,8 +184,40 @@ binder_inductive (no_auto_equiv) val
 
 thm val.strong_induct
 
-binder_inductive (no_auto_equiv) beta
-  sorry (*TODO: Dmitriy*)
+lemma subst_comp:
+  assumes "|SSupp Var f| <o |UNIV :: 'var set|" "|SSupp Var g| <o |UNIV :: 'var set|"
+  shows "subst f (subst g t) = subst (subst f o g) (t :: 'var :: var term)"
+  unfolding term.Sb_comp[OF assms(2,1), symmetric] o_apply ..
+
+text \<open>General commutation of permutation with unary substitution (needed for @{text beta} equivariance).
+  Proved via the Sb route (@{thm term.map_is_Sb}), avoiding induction and the Let-distribution side
+  condition of @{thm usubst_simps}. NB the @{text "(t::'a term)"} annotation is essential: without it
+  @{text \<sigma>}'s type is inferred disconnected from @{text bs}, and @{text "term.permute[OF bs]"} fails to unify.\<close>
+lemma permute_usubst:
+  assumes bs: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a::var set|"
+  shows "permute_term \<sigma> ((t::'a term)[s <- y]) = (permute_term \<sigma> t)[(permute_term \<sigma> s) <- \<sigma> y]"
+proof -
+  have permSb: "permute_term \<sigma> = subst (Var \<circ> \<sigma>)"
+    using term.vvsubst_permute[OF bs] term.map_is_Sb[OF bs(2)] by metis
+  have b\<sigma>: "|SSupp Var (Var \<circ> \<sigma>) :: 'a set| <o |UNIV::'a set|"
+  proof -
+    have "SSupp Var (Var \<circ> \<sigma>) = supp \<sigma>" by (auto simp: SSupp_def supp_def)
+    then show ?thesis using bs(2) by simp
+  qed
+  have b1: "\<And>x u::'a term. |SSupp Var (Var(x := u)) :: 'a set| <o |UNIV::'a set|"
+    by (rule ordLeq_ordLess_trans[OF card_of_mono1[OF SSupp_term_fun_upd]])
+       (auto intro!: finite_ordLess_infinite2 simp: infinite_UNIV)
+  have fun_eq: "subst (Var \<circ> \<sigma>) \<circ> Var(y := s) = subst (Var (\<sigma> y := subst (Var \<circ> \<sigma>) s)) \<circ> (Var \<circ> \<sigma>)"
+  proof (rule ext)
+    fix z show "(subst (Var \<circ> \<sigma>) \<circ> Var(y := s)) z = (subst (Var (\<sigma> y := subst (Var \<circ> \<sigma>) s)) \<circ> (Var \<circ> \<sigma>)) z"
+      using bs by (cases "z = y") (auto simp: term.Sb_Inj bij_implies_inject)
+  qed
+  show ?thesis
+    unfolding usubst_def permSb
+    apply (subst subst_comp[OF b\<sigma> b1])
+    apply (subst subst_comp[OF b1 b\<sigma>])
+    unfolding fun_eq ..
+qed
 
 lemma finite_dset: "finite (dset (xy :: 'a::var dpair))"
   by transfer auto
@@ -408,6 +440,53 @@ lemma dsnd_dmap[simp]: "bij f \<Longrightarrow> dsnd (dmap f xy) = f (dsnd xy)"
   by transfer auto
 lemma dset_alt: "dset xy = {dfst xy, dsnd xy}"
   by transfer auto
+
+abbreviation (input) beta_D where
+  "beta_D R x1 x2 B \<equiv>
+    (\<exists>N N' f x M. B = {f} \<union> {x} \<and> x1 = App (Fix f x M) N \<and> x2 = App (Fix f x M) N' \<and> R N N') \<or>
+    (\<exists>M M' N. B = {} \<and> x1 = App M N \<and> x2 = App M' N \<and> R M M') \<or>
+    (\<exists>M M'. B = {} \<and> x1 = Succ M \<and> x2 = Succ M' \<and> R M M') \<or>
+    (\<exists>M M'. B = {} \<and> x1 = Pred M \<and> x2 = Pred M' \<and> R M M') \<or>
+    (\<exists>M M' N. B = {} \<and> x1 = term.Pair M N \<and> x2 = term.Pair M' N \<and> R M M') \<or>
+    (\<exists>V N N'. B = {} \<and> x1 = term.Pair V N \<and> x2 = term.Pair V N' \<and> val V \<and> R N N') \<or>
+    (\<exists>M M' xy N. B = dset xy \<and> x1 = term.Let xy M N \<and> x2 = term.Let xy M' N \<and> R M M') \<or>
+    (\<exists>M M' N P. B = {} \<and> x1 = term.If M N P \<and> x2 = term.If M' N P \<and> R M M') \<or>
+    (\<exists>N P. B = {} \<and> x1 = term.If Zero N P \<and> x2 = N) \<or>
+    (\<exists>n N P. B = {} \<and> x1 = term.If (Succ n) N P \<and> x2 = P \<and> num n) \<or>
+    (\<exists>V W xy M. B = dset xy \<and> x1 = term.Let xy (term.Pair V W) M \<and> x2 = M[V <- dfst xy][W <- dsnd xy] \<and> val V \<and> val W) \<or>
+    (B = {} \<and> x1 = Pred Zero \<and> x2 = Zero) \<or>
+    (\<exists>n. B = {} \<and> x1 = Pred (Succ n) \<and> x2 = n \<and> num n) \<or>
+    (\<exists>V f x M. B = {f} \<union> {x} \<and> x1 = App (Fix f x M) V \<and> x2 = M[V <- x][Fix f x M <- f] \<and> val V)"
+
+lemma beta_equiv_ob:
+  assumes s: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a::var set|"
+    and D: "beta_D R (x1::'a term) x2 B"
+  shows "beta_D (\<lambda>a b. R (permute_term (inv \<sigma>) a) (permute_term (inv \<sigma>) b)) (permute_term \<sigma> x1) (permute_term \<sigma> x2) (\<sigma> ` B)"
+  supply SET[simp] = s term.permute[OF s(1) s(2)] permute_term_inv[OF s] image_Un
+      permute_usubst[OF s] dfst_dmap[OF s(1)] dsnd_dmap[OF s(1)] dpair.set_map[OF s(1)]
+      val_permute_iff[OF s] num_permute_iff[OF s]
+  using D
+  apply (elim disjE exE conjE)
+  subgoal for N N' f x M by (rule disjI1, rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ "permute_term \<sigma> N'"], rule exI[of _ "\<sigma> f"], rule exI[of _ "\<sigma> x"], rule exI[of _ "permute_term \<sigma> M"]) auto
+  subgoal by (rule disjI2, rule disjI1) auto
+  subgoal by (rule disjI2, rule disjI2, rule disjI1) auto
+  subgoal by (rule disjI2, rule disjI2, rule disjI2, rule disjI1) auto
+  subgoal by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1) auto
+  subgoal by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1) auto
+  subgoal for M M' xy N by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1, rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ "permute_term \<sigma> M'"], rule exI[of _ "dmap \<sigma> xy"], rule exI[of _ "permute_term \<sigma> N"]) auto
+  subgoal by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1) auto
+  subgoal by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1) auto
+  subgoal by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1) auto
+  subgoal for V W xy M by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1, rule exI[of _ "permute_term \<sigma> V"], rule exI[of _ "permute_term \<sigma> W"], rule exI[of _ "dmap \<sigma> xy"], rule exI[of _ "permute_term \<sigma> M"]) auto
+  subgoal by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1) auto
+  subgoal by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1) auto
+  subgoal for V f x M by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule exI[of _ "permute_term \<sigma> V"], rule exI[of _ "\<sigma> f"], rule exI[of _ "\<sigma> x"], rule exI[of _ "permute_term \<sigma> M"]) auto
+  done
+
+binder_inductive (no_auto_equiv) beta
+  subgoal premises prems for R B \<sigma> x1 x2 by (rule beta_equiv_ob[OF prems(1) prems(2) prems(3)])
+  subgoal premises prems for R B x1 x2 sorry
+  done
 
 lemma beta_deterministic: "M \<rightarrow> N \<Longrightarrow> M \<rightarrow> N' \<Longrightarrow> N = N'"
   apply(binder_induction M N arbitrary: N' avoiding: M N N' rule: beta.strong_induct)
@@ -854,11 +933,6 @@ lemma SSupp_term_subst_bound:
   shows "|SSupp Var (subst f \<circ> g)| <o |UNIV :: 'a set|"
   using SSupp_term_subst[of f g] assms
   by (simp add: card_of_subset_bound Un_bound)
-
-lemma subst_comp:
-  assumes "|SSupp Var f| <o |UNIV :: 'var set|" "|SSupp Var g| <o |UNIV :: 'var set|"
-  shows "subst f (subst g t) = subst (subst f o g) (t :: 'var :: var term)"
-  unfolding term.Sb_comp[OF assms(2,1), symmetric] o_apply ..
 
 lemmas subst_cong = term.Sb_cong
 
