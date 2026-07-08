@@ -3892,7 +3892,7 @@ next
   case (gSucc z M)
   then have "num (M[N <- z])" using val_Succ_num by simp
   then have "z \<notin> FVars M" using num_guarded_zfree gSucc.hyps by blast
-  then show ?case using gSucc.prems by (simp add: subst_idle)
+  then show ?case using gSucc.prems by simp
 next
   case (gPred z M) then show ?case using gPred.prems by simp
 next
@@ -3913,8 +3913,162 @@ next
     and f': "f' \<notin> {z} \<union> FVars P" and x': "x' \<notin> {z} \<union> FVars P"
     using Fix_refresh[of "{z} \<union> FVars P" f x M] finite_FVars by auto
   have "(Fix f x M)[P <- z] = Fix f' x' (M'[P <- z])"
-    unfolding eq using f' x' by (simp add: usubst_simps(7))
+    unfolding eq using f' x' by simp
   then show ?case by (simp add: val.intros(4))
+qed
+
+lemma guarded_zfree: "z \<notin> FVars M \<Longrightarrow> guarded z M"
+proof (binder_induction M avoiding: z rule: term.strong_induct)
+  case (Var x) then show ?case by simp
+next
+  case (Let xy M1 M2)
+  then have "z \<notin> FVars M1" and "z \<notin> FVars M2" by auto
+  then show ?case using Let.IH by (auto intro: gLet)
+next
+  case (Fix f x M) then show ?case by simp
+qed auto
+
+lemma guardedize:
+  assumes zN: "z \<notin> FVars N" and ls: "P \<lesssim> N"
+  shows "val (U[N <- z]) \<Longrightarrow>
+    diverge (U[P <- z]) \<or> (\<exists>U'. guarded z U' \<and> U'[N <- z] = U[N <- z] \<and> U[P <- z] \<rightarrow>* U'[P <- z])"
+proof (binder_induction U avoiding: N P z rule: term.strong_induct,
+    goal_cases Zero Succ Pred If Var App Fix Pair Let)
+  case Zero
+  have "guarded z Zero \<and> Zero[N <- z] = Zero[N <- z] \<and> Zero[P <- z] \<rightarrow>* Zero[P <- z]"
+    by (auto simp: beta_star_def intro: betas.refl)
+  then show ?case by blast
+next
+  case (Succ M)
+  from Succ(2) have "num (M[N <- z])" using val_Succ_num[of "M[N <- z]"] by simp
+  then have vM: "val (M[N <- z])" by (rule val.intros(2))
+  from Succ(1)[OF vM] consider (d) "diverge (M[P <- z])"
+    | (g) U' where "guarded z U'" "U'[N <- z] = M[N <- z]" "M[P <- z] \<rightarrow>* U'[P <- z]" by blast
+  then show ?case
+  proof cases
+    case d
+    obtain h :: 'a where h: "eval_ctx h (Succ (Var h))" using eval_ctx.intros by blast
+    have "diverge ((Succ (Var h))[M[P <- z] <- h])" using div_ctx[OF h] d by blast
+    then show ?thesis by simp
+  next
+    case (g U')
+    have "guarded z (Succ U') \<and> (Succ U')[N <- z] = (Succ M)[N <- z]
+        \<and> (Succ M)[P <- z] \<rightarrow>* (Succ U')[P <- z]"
+      using g by (simp add: Succ_beta_star)
+    then show ?thesis by blast
+  qed
+next
+  case (Pred M) then show ?case using Pred(2) by simp
+next
+  case (If M1 M2 M3) then show ?case using If(4) by simp
+next
+  case (Var y)
+  show ?case
+  proof (cases "y = z")
+    case True
+    then have vN: "val N" using Var(1) by simp
+    show ?thesis
+    proof (cases "diverge P")
+      case True then show ?thesis using \<open>y = z\<close> by simp
+    next
+      case False
+      then obtain Nf where Nf: "normal Nf" "P \<rightarrow>* Nf" "N \<rightarrow>* Nf"
+        using ls diverge_or_normalizes[of P] unfolding less_defined_def normalizes_def by auto
+      have "N = Nf" using Nf(3) vals_are_normal[OF vN] unfolding beta_star_def normal_def
+        by (metis betas.cases)
+      then have "P \<rightarrow>* N" using Nf(2) by simp
+      moreover have "guarded z N" by (rule guarded_zfree[OF zN])
+      ultimately have "guarded z N \<and> N[N <- z] = (Var y)[N <- z] \<and> (Var y)[P <- z] \<rightarrow>* N[P <- z]"
+        using \<open>y = z\<close> zN by simp
+      then show ?thesis by blast
+    qed
+  next
+    case False
+    have "guarded z (Var y) \<and> (Var y)[N <- z] = (Var y)[N <- z] \<and> (Var y)[P <- z] \<rightarrow>* (Var y)[P <- z]"
+      using False by (auto simp: beta_star_def intro: betas.refl)
+    then show ?thesis by blast
+  qed
+next
+  case (App M1 M2) then show ?case using App(3) by simp
+next
+  case (Fix f x M)
+  have "guarded z (Fix f x M) \<and> (Fix f x M)[N <- z] = (Fix f x M)[N <- z]
+      \<and> (Fix f x M)[P <- z] \<rightarrow>* (Fix f x M)[P <- z]"
+    by (auto simp: beta_star_def intro: betas.refl)
+  then show ?case by blast
+next
+  case (Pair M1 M2)
+  from Pair(3) have v1: "val (M1[N <- z])" and v2: "val (M2[N <- z])"
+    using val_Pair_D by auto
+  from Pair(1)[OF v1] consider (d1) "diverge (M1[P <- z])"
+    | (g1) U1 where "guarded z U1" "U1[N <- z] = M1[N <- z]" "M1[P <- z] \<rightarrow>* U1[P <- z]" by blast
+  then show ?case
+  proof cases
+    case d1
+    then have "diverge ((Pair M1 M2)[P <- z])" by (simp add: Pair_div)
+    then show ?thesis by simp
+  next
+    case (g1 U1)
+    have vU1: "val (U1[P <- z])" using val_subst_guarded g1(1) g1(2) v1 by metis
+    have reflW2: "M2[P <- z] \<rightarrow>* M2[P <- z]" using beta_star_def betas.refl by blast
+    from Pair(2)[OF v2] consider (d2) "diverge (M2[P <- z])"
+      | (g2) U2 where "guarded z U2" "U2[N <- z] = M2[N <- z]" "M2[P <- z] \<rightarrow>* U2[P <- z]" by blast
+    then show ?thesis
+    proof cases
+      case d2
+      have "Pair (M1[P <- z]) (M2[P <- z]) \<rightarrow>* Pair (U1[P <- z]) (M2[P <- z])"
+        by (rule Pair_beta_star[OF g1(3) reflW2 vU1])
+      moreover have "diverge (Pair (U1[P <- z]) (M2[P <- z]))" by (rule Pair_div2[OF vU1 d2])
+      ultimately have "diverge (Pair (M1[P <- z]) (M2[P <- z]))"
+        using beta_star_diverge_back by blast
+      then show ?thesis by simp
+    next
+      case (g2 U2)
+      have "guarded z (Pair U1 U2) \<and> (Pair U1 U2)[N <- z] = (Pair M1 M2)[N <- z]
+          \<and> (Pair M1 M2)[P <- z] \<rightarrow>* (Pair U1 U2)[P <- z]"
+        using g1 g2 vU1 by (simp add: Pair_beta_star[OF g1(3) g2(3) vU1])
+      then show ?thesis by blast
+    qed
+  qed
+next
+  case (Let xy M1 M2) then show ?case using Let(3) val_usubst_Let_False by blast
+qed
+
+text \<open>@{text b4} specialised to a value target, additionally securing the @{text guarded}
+  invariant on the witness (this is the strengthening of Lemma B.4 that the author's proof of
+  Lemma B.5 relies on): the value @{text V} is reached as @{text "U[N <- z]"} for some @{text U}
+  whose @{text z}-occurrences are all below fixpoint abstractions.\<close>
+lemma b4_val:
+  assumes "M[N <- z] \<rightarrow>* V" and "val V" and "P \<lesssim> N" and "z \<notin> FVars N"
+  shows "diverge (M[P <- z]) \<or> (\<exists>U. guarded z U \<and> V = U[N <- z] \<and> M[P <- z] \<rightarrow>* U[P <- z])"
+proof -
+  from assms(1) obtain k where "M[N <- z] \<rightarrow>[k] V" unfolding beta_star_def by auto
+  then have "diverge (M[P <- z]) \<or> (\<exists>m U0. V = U0[N <- z] \<and> M[P <- z] \<rightarrow>[m] U0[P <- z])"
+    using b4[of M N z k V P] vals_are_normal[OF assms(2)] assms(3,4) by auto
+  then show ?thesis
+  proof
+    assume "diverge (M[P <- z])" then show ?thesis by simp
+  next
+    assume "\<exists>m U0. V = U0[N <- z] \<and> M[P <- z] \<rightarrow>[m] U0[P <- z]"
+    then obtain U0 where U0: "V = U0[N <- z]" and st: "M[P <- z] \<rightarrow>* U0[P <- z]"
+      unfolding beta_star_def by auto
+    have "val (U0[N <- z])" using U0 assms(2) by simp
+    then have "diverge (U0[P <- z]) \<or>
+        (\<exists>U'. guarded z U' \<and> U'[N <- z] = U0[N <- z] \<and> U0[P <- z] \<rightarrow>* U'[P <- z])"
+      using guardedize[OF assms(4) assms(3)] by simp
+    then show ?thesis
+    proof
+      assume "diverge (U0[P <- z])"
+      then have "diverge (M[P <- z])" using st beta_star_diverge_back by blast
+      then show ?thesis by simp
+    next
+      assume "\<exists>U'. guarded z U' \<and> U'[N <- z] = U0[N <- z] \<and> U0[P <- z] \<rightarrow>* U'[P <- z]"
+      then obtain U' where "guarded z U'" "U'[N <- z] = U0[N <- z]" "U0[P <- z] \<rightarrow>* U'[P <- z]" by auto
+      then have "guarded z U' \<and> V = U'[N <- z] \<and> M[P <- z] \<rightarrow>* U'[P <- z]"
+        using U0 st beta_star_sums by auto
+      then show ?thesis by blast
+    qed
+  qed
 qed
 
 lemma b5_induction:
@@ -4002,58 +4156,52 @@ next
   qed
 next
   case (3 V1 V2)
-  then obtain U where U1: "Pair V1 V2 = U[N <- z]" and U2: "M[P <- z] \<rightarrow>* U[P <- z]"
-    using b4[of M N z _ "Pair V1 V2" P] beta_star_def val.intros(3) vals_are_normal
-    by metis
+  have vV: "val (term.Pair V1 V2)" using 3(1) 3(2) by (rule val.intros(3))
+  from b4_val[OF "3.prems"(2) vV "3.prems"(3) "3.prems"(1)] "3.prems"(4)
+  obtain U where gU: "guarded z U" and U1: "term.Pair V1 V2 = U[N <- z]" and U2: "M[P <- z] \<rightarrow>* U[P <- z]"
+    by auto
   then show ?case
   proof (cases "U = Var z")
     case True
-    then show ?thesis 
+    then show ?thesis
       using b5_helper[of M N z "Pair V1 V2" P U] 3 val.intros(3) U1 U2 by blast
   next
     case False
-    then obtain M1 M2 where m1m2: "U = Pair M1 M2" and m1: "M1[N <- z] = V1" and m2: "M2[N <- z] = V2"
-      using subst_Pair_inversion[of U N z V1 V2] False U1
-      by metis
-    then have "val M1" and "val M2"
-      using subst_val_inversion 3(1, 2) (*what if M1 or M2 = Suc z, N = Zero*) sorry (*why do we need you?*)
-    have "\<not> (M1[P <- z] \<Up>)" 
-      using m1m2 U2 beta_star_diverge_back[of "M[P <- z]" "U[P <- z]"]
-      using "3.prems"(4) Pair_div[of "M1[P <- z]" "M2[P <- z]"] 
-      by auto
-    then have "\<not> (M2[P <- z] \<Up>)" sorry (*what if M2 diverge and M1 stuck*)
+    then obtain M1 M2 where m1m2: "U = term.Pair M1 M2" and m1: "M1[N <- z] = V1" and m2: "M2[N <- z] = V2"
+      using subst_Pair_inversion[of U N z V1 V2] U1 by metis
+    have gM1: "guarded z M1" and gM2: "guarded z M2" using gU m1m2 by simp_all
+    have vM1P: "val (M1[P <- z])" using val_subst_guarded[OF gM1] m1 3(1) by metis
+    have vM2P: "val (M2[P <- z])" using val_subst_guarded[OF gM2] m2 3(2) by metis
+    have "\<not> diverge (U[P <- z])" using "3.prems"(4) U2 beta_star_diverge_back by blast
+    then have nd1: "\<not> (M1[P <- z] \<Up>)" and nd2: "\<not> (M2[P <- z] \<Up>)"
+      using m1m2 Pair_div Pair_div2[OF vM1P] by auto
     show ?thesis
-    proof(cases "haveFix (Pair V1 V2)")
+    proof(cases "haveFix (term.Pair V1 V2)")
       case True
-      then have b5VU: "b5_prop (Pair V1 V2) U[P <- z] P N z" unfolding b5_prop_def
-        using m1m2 m1 m2 term.distinct(55) term.inject(7)
-        by auto
-      have "val M1[P <- z]" and "val M2[P <- z]" 
-        using \<open>val M1\<close> \<open>val M2\<close> sorry (*is right?*)
-      then have "val U[P <- z]" using m1m2 val.intros by auto
-      then have "val U[P <- z] \<and> M[P <- z] \<rightarrow>* U[P <- z] \<and> b5_prop (term.Pair V1 V2) U[P <- z] P N z"
-        using b5VU U2 by auto
-      then show ?thesis by auto
+      have b5VU: "b5_prop (term.Pair V1 V2) (U[P <- z]) P N z" unfolding b5_prop_def
+        using m1m2 m1 m2 True by auto
+      have "val (U[P <- z])" using m1m2 vM1P vM2P by (simp add: val.intros(3))
+      then show ?thesis using b5VU U2 by auto
     next
       case False
       obtain W1 where "val W1" and "M1[P <- z] \<rightarrow>* W1" and "b5_prop V1 W1 P N z"
         using 3(3)[of M1] m1 beta_star_def betas.refl
-        using \<open>P \<lesssim> N\<close> \<open>z \<notin> FVars N\<close> \<open>\<not> (M1[P <- z] \<Up>)\<close> \<open>z \<notin> FVars (Pair V1 V2)\<close>
+        using "3.prems"(3) "3.prems"(1) nd1 "3.prems"(5)
         by (metis Un_iff term.set(8))
       moreover obtain W2 where "val W2" and "M2[P <- z] \<rightarrow>* W2" and "b5_prop V2 W2 P N z"
         using 3(4)[of M2] m2 beta_star_def betas.refl
-        using \<open>P \<lesssim> N\<close> \<open>z \<notin> FVars N\<close> \<open>\<not> (M2[P <- z] \<Up>)\<close> \<open>z \<notin> FVars (Pair V1 V2)\<close>
+        using "3.prems"(3) "3.prems"(1) nd2 "3.prems"(5)
         by (metis Un_iff term.set(8))
-      ultimately have *: "val (Pair W1 W2)" and **: "M[P <- z] \<rightarrow>* (Pair W1 W2)"
+      ultimately have *: "val (term.Pair W1 W2)" and **: "M[P <- z] \<rightarrow>* (term.Pair W1 W2)"
         using val.intros(3) U2 m1m2 beta_star_sums[of "M[P <- z]" "U[P <- z]" "Pair W1 W2"] Pair_beta_star
          apply auto
         by blast
       have "\<not> haveFix V1" and "\<not> haveFix V2"
         using False haveFix_Pair by auto
-      then have "V1 = W1 \<and> V2 = W2" 
+      then have "V1 = W1 \<and> V2 = W2"
         using \<open>b5_prop V1 W1 P N z\<close> \<open>b5_prop V2 W2 P N z\<close> unfolding b5_prop_def by blast
       then have "val (Pair V1 V2) \<and> M[P <- z] \<rightarrow>* (Pair V1 V2) \<and> b5_prop (Pair V1 V2) (Pair V1 V2) P N z"
-        using * ** b5_prop_reflexive 3(1, 2, 9) by blast
+        using * ** b5_prop_reflexive 3(1) 3(2) "3.prems"(5) by blast
       then show ?thesis by auto
     qed
   qed
@@ -4494,218 +4642,686 @@ next
   then show ?thesis by auto
 qed
 
+lemma stuck_not_val: "stuck M \<Longrightarrow> \<not> val M"
+  unfolding stuck_def using val_ctx_plug stuckEx_not_val by metis
+
+text \<open>Support lemmas for @{text b6}: evaluation-context composition, lifting @{text getStuck}/
+  @{text diverge} through a context, structural inversions of @{text stuck} at each constructor,
+  and the key induction @{text b6'} (a stuck term stays stuck-or-divergent under a less-defined
+  substitution), from which @{text b6} follows via @{text b4}.\<close>
+
+lemma eval_ctx_compose:
+  "eval_ctx hole E \<Longrightarrow> eval_ctx h D \<Longrightarrow> h \<noteq> hole \<Longrightarrow> h \<notin> FVars E \<Longrightarrow> eval_ctx h (E[D <- hole])"
+proof (binder_induction hole E avoiding: "App D (Var h)" E rule: eval_ctx.strong_induct)
+  case (1 holea)
+  then show ?case by simp
+next
+  case (2 holea Ea M f xa)
+  have hEa: "h \<notin> FVars Ea" and hM: "h \<notin> FVars M" using 2(7) 2(1) by auto
+  have push: "(App (Fix f xa M) Ea)[D <- holea] = App (Fix f xa M) (Ea[D <- holea])"
+    using 2(4) by simp
+  show ?case unfolding push by (rule eval_ctx.intros(2)[OF 2(8)[OF 2(5) 2(6) hEa] hM])
+next
+  case (3 holea Ea N)
+  have hEa: "h \<notin> FVars Ea" and hN: "h \<notin> FVars N" using 3(5) by auto
+  have push: "(App Ea N)[D <- holea] = App (Ea[D <- holea]) N" using 3(2) by simp
+  show ?case unfolding push by (rule eval_ctx.intros(3)[OF 3(6)[OF 3(3) 3(4) hEa] hN])
+next
+  case (4 holea Ea)
+  have hEa: "h \<notin> FVars Ea" using 4(4) by simp
+  show ?case using eval_ctx.intros(4)[OF 4(5)[OF 4(2) 4(3) hEa]] by simp
+next
+  case (5 holea Ea)
+  have hEa: "h \<notin> FVars Ea" using 5(4) by simp
+  show ?case using eval_ctx.intros(5)[OF 5(5)[OF 5(2) 5(3) hEa]] by simp
+next
+  case (6 holea Ea N)
+  have hEa: "h \<notin> FVars Ea" and hN: "h \<notin> FVars N" using 6(5) by auto
+  have push: "(term.Pair Ea N)[D <- holea] = term.Pair (Ea[D <- holea]) N" using 6(2) by simp
+  show ?case unfolding push by (rule eval_ctx.intros(6)[OF 6(6)[OF 6(3) 6(4) hEa] hN])
+next
+  case (7 V holea Ea)
+  have hEa: "h \<notin> FVars Ea" and hV: "h \<notin> FVars V" using 7(6) by auto
+  have push: "(term.Pair V Ea)[D <- holea] = term.Pair V (Ea[D <- holea])" using 7(3) by simp
+  show ?case unfolding push by (rule eval_ctx.intros(7)[OF 7(1) 7(7)[OF 7(4) 7(5) hEa] hV])
+next
+  case (8 holea Ea N xy)
+  have hxy: "h \<notin> dset xy" and dD: "dset xy \<inter> FVars D = {}" using 8(1) by auto
+  have hEa: "h \<notin> FVars Ea" using 8(8) by simp
+  have hN: "h \<notin> FVars N" using 8(8) hxy by auto
+  have push: "(term.Let xy Ea N)[D <- holea] = term.Let xy (Ea[D <- holea]) N"
+    using 8(4) by (subst usubst_Let[OF 8(5) dD]) simp
+  show ?case unfolding push by (rule eval_ctx.intros(8)[OF 8(9)[OF 8(6) 8(7) hEa] hN hxy])
+next
+  case (9 holea Ea N P)
+  have hEa: "h \<notin> FVars Ea" and hN: "h \<notin> FVars N" and hP: "h \<notin> FVars P" using 9(6) by auto
+  have push: "(term.If Ea N P)[D <- holea] = term.If (Ea[D <- holea]) N P" using 9(2) 9(3) by simp
+  show ?case unfolding push by (rule eval_ctx.intros(9)[OF 9(7)[OF 9(4) 9(5) hEa] hN hP])
+qed
+
+lemma stuck_ctx:
+  assumes ctx: "eval_ctx hole E" and st: "stuck S" and hS: "hole \<notin> FVars S"
+  shows "stuck (E[S <- hole])"
+proof -
+  obtain D h s where hD: "eval_ctx h D" and Seq: "S = D[s <- h]" and ss: "stuckEx s"
+      and h': "h \<notin> FVars E \<union> {hole}"
+    using stuck_fresh_hole[OF st, of "FVars E \<union> {hole}"] finite_FVars by auto
+  have hh: "h \<noteq> hole" and hFE: "h \<notin> FVars E" using h' by auto
+  have hs: "hole \<notin> FVars s"
+  proof -
+    have "FVars s \<subseteq> FVars S" using Seq eval_ctxt_FVars[OF hD] by (auto simp: FVars_usubst)
+    then show ?thesis using hS by auto
+  qed
+  have eq: "E[S <- hole] = (E[D <- hole])[s <- h]"
+  proof -
+    have "(E[D <- hole])[s <- h] = E[s <- h][D[s <- h] <- hole]"
+      by (rule usubst_usubst[OF hh[symmetric] hs])
+    also have "\<dots> = E[D[s <- h] <- hole]" using hFE by simp
+    also have "\<dots> = E[S <- hole]" unfolding Seq ..
+    finally show ?thesis by (rule sym)
+  qed
+  have "eval_ctx h (E[D <- hole])" using eval_ctx_compose[OF ctx hD hh hFE] .
+  then show ?thesis unfolding eq stuck_def using ss by metis
+qed
+
+lemma getStuck_ctx:
+  assumes ctx: "eval_ctx hole E" and gs: "getStuck A" and hA: "hole \<notin> FVars A"
+  shows "getStuck (E[A <- hole])"
+proof -
+  obtain S where AS: "A \<rightarrow>* S" and stS: "stuck S" using gs getStuck_def by auto
+  have hS: "hole \<notin> FVars S" using AS FVars_beta_star hA by auto
+  have "E[A <- hole] \<rightarrow>* E[S <- hole]" using eval_ctx_beta_star[OF ctx AS] .
+  moreover have "stuck (E[S <- hole])" using stuck_ctx[OF ctx stS hS] .
+  ultimately show ?thesis unfolding getStuck_def by auto
+qed
+
+lemma progress: "normal M \<Longrightarrow> val M \<or> stuck M"
+  using val_stuck_step normal_def by auto
+
+lemma not_stuck_Zero: "\<not> stuck Zero"
+  using stuck_not_val val.intros(2) num.intros(1) by blast
+
+lemma not_stuck_Var: "\<not> stuck (Var x)"
+  using stuck_not_val val.intros(1) by blast
+
+lemma not_stuck_Fix: "\<not> stuck (Fix f x M)"
+  using stuck_not_val val.intros(4) by blast
+
+lemma stuck_Succ: "stuck (Succ M) \<Longrightarrow> (val M \<and> \<not> num M) \<or> stuck M"
+proof -
+  assume s: "stuck (Succ M)"
+  have nM: "normal M" using s stucks_are_normal[of "Succ M"] unfolding normal_def
+    by (metis beta.OrdSucc)
+  have "\<not> num M" using s stuck_not_val num.intros(2) val.intros(2) by blast
+  then show ?thesis using nM progress by blast
+qed
+
+lemma stuck_Pred: "stuck (Pred M) \<Longrightarrow> (val M \<and> \<not> num M) \<or> stuck M"
+proof -
+  assume s: "stuck (Pred M)"
+  have nM: "normal M" using s stucks_are_normal[of "Pred M"] unfolding normal_def
+    by (metis beta.OrdPred)
+  have "\<not> num M" using s stucks_are_normal[of "Pred M"] unfolding normal_def
+    by (metis beta.PredZ beta.PredS num.cases)
+  then show ?thesis using nM progress by blast
+qed
+
+lemma stuck_If: "stuck (If M N P) \<Longrightarrow> (val M \<and> \<not> num M) \<or> stuck M"
+proof -
+  assume s: "stuck (If M N P)"
+  have nM: "normal M" using s stucks_are_normal[of "If M N P"] unfolding normal_def
+    by (metis beta.OrdIf)
+  have "\<not> num M" using s stucks_are_normal[of "If M N P"] unfolding normal_def
+    by (metis beta.Ifz beta.Ifs num.cases)
+  then show ?thesis using nM progress by blast
+qed
+
+lemma normal_AppFix_arg: "normal (App (Fix f x M0) B) \<Longrightarrow> \<not> val B"
+proof (rule notI)
+  assume n: "normal (App (Fix f x M0) B)" and v: "val B"
+  obtain f' x' M0' where eq: "Fix f x M0 = Fix f' x' M0'" and f': "f' \<notin> FVars B"
+    using Fix_refresh[of "FVars B" f x M0] finite_FVars by auto
+  have "App (Fix f x M0) B \<rightarrow> M0'[B <- x'][Fix f' x' M0' <- f']"
+    unfolding eq using beta.FixBeta[OF v f'] .
+  then show False using n normal_def by auto
+qed
+
+lemma stuck_App:
+  "stuck (App M1 M2) \<Longrightarrow> (val M1 \<and> \<not> is_Fix M1) \<or> stuck M1 \<or> (is_Fix M1 \<and> stuck M2)"
+proof -
+  assume s: "stuck (App M1 M2)"
+  have n: "normal (App M1 M2)" using s stucks_are_normal by blast
+  have n1: "normal M1" using n unfolding normal_def by (metis beta.OrdApp1)
+  show ?thesis
+  proof (cases "val M1")
+    case False
+    then have "stuck M1" using n1 progress by blast
+    then show ?thesis by blast
+  next
+    case True
+    show ?thesis
+    proof (cases "is_Fix M1")
+      case False
+      then show ?thesis using True by blast
+    next
+      case True
+      then obtain f x M0 where m1: "M1 = Fix f x M0" unfolding is_Fix_def by blast
+      have "\<not> val M2" using n normal_AppFix_arg m1 by blast
+      moreover have "normal M2" using n m1 unfolding normal_def by (metis beta.OrdApp2)
+      ultimately have "stuck M2" using progress by blast
+      then show ?thesis using \<open>is_Fix M1\<close> by blast
+    qed
+  qed
+qed
+
+lemma stuck_Pair:
+  "stuck (term.Pair M1 M2) \<Longrightarrow> stuck M1 \<or> (val M1 \<and> stuck M2)"
+proof -
+  assume s: "stuck (term.Pair M1 M2)"
+  have n: "normal (term.Pair M1 M2)" using s stucks_are_normal by blast
+  have n1: "normal M1" using n unfolding normal_def by (metis beta.OrdPair1)
+  show ?thesis
+  proof (cases "val M1")
+    case False then show ?thesis using n1 progress by blast
+  next
+    case True
+    have "\<not> val M2" using s stuck_not_val True val.intros(3) by blast
+    moreover have "normal M2" using True n unfolding normal_def by (metis beta.OrdPair2)
+    ultimately have "stuck M2" using progress by blast
+    then show ?thesis using True by blast
+  qed
+qed
+
+lemma normal_Let_notPair:
+  "normal (term.Let xy M1 M2) \<Longrightarrow> val M1 \<Longrightarrow> \<not> is_Pair M1"
+proof (rule notI)
+  assume n: "normal (term.Let xy M1 M2)" and v: "val M1" and p: "is_Pair M1"
+  from p obtain V W where m1: "M1 = term.Pair V W" unfolding is_Pair_def by blast
+  have vV: "val V" and vW: "val W" using v m1 val_Pair_D by auto
+  obtain xy' M2' where eq: "term.Let xy M1 M2 = term.Let xy' M1 M2'" and d: "dset xy' \<inter> FVars V = {}"
+    using Let_refresh[of "FVars V" xy M1 M2] finite_FVars by blast
+  have "term.Let xy' M1 M2' \<rightarrow> M2'[V <- dfst xy'][W <- dsnd xy']"
+    unfolding m1 using beta.Let[OF vV vW d] .
+  then show False using n eq normal_def by auto
+qed
+
+lemma stuck_Let:
+  "stuck (term.Let xy M1 M2) \<Longrightarrow> (val M1 \<and> \<not> is_Pair M1) \<or> stuck M1"
+proof -
+  assume s: "stuck (term.Let xy M1 M2)"
+  have n: "normal (term.Let xy M1 M2)" using s stucks_are_normal by blast
+  have n1: "normal M1" using n unfolding normal_def by (metis beta.OrdLet)
+  show ?thesis
+  proof (cases "val M1")
+    case False then show ?thesis using n1 progress by blast
+  next
+    case True
+    then have "\<not> is_Pair M1" using n normal_Let_notPair by blast
+    then show ?thesis using True by blast
+  qed
+qed
+
+lemma dg_Succ: "diverge A \<or> getStuck A \<Longrightarrow> diverge (Succ A) \<or> getStuck (Succ A)"
+proof -
+  assume dg: "diverge A \<or> getStuck A"
+  obtain h where h: "h \<notin> FVars A" by (meson arb_element finite_FVars)
+  have ctx: "eval_ctx h (Succ (Var h))" by (rule eval_ctx.intros(4)[OF eval_ctx.intros(1)])
+  show ?thesis
+  proof (cases "diverge A")
+    case True then show ?thesis using div_ctx[OF ctx True] by simp
+  next
+    case False
+    then have "getStuck ((Succ (Var h))[A <- h])" using getStuck_ctx[OF ctx _ h] dg by blast
+    then show ?thesis by simp
+  qed
+qed
+
+lemma dg_Pred: "diverge A \<or> getStuck A \<Longrightarrow> diverge (Pred A) \<or> getStuck (Pred A)"
+proof -
+  assume dg: "diverge A \<or> getStuck A"
+  obtain h where h: "h \<notin> FVars A" by (meson arb_element finite_FVars)
+  have ctx: "eval_ctx h (Pred (Var h))" by (rule eval_ctx.intros(5)[OF eval_ctx.intros(1)])
+  show ?thesis
+  proof (cases "diverge A")
+    case True then show ?thesis using div_ctx[OF ctx True] by simp
+  next
+    case False
+    then have "getStuck ((Pred (Var h))[A <- h])" using getStuck_ctx[OF ctx _ h] dg by blast
+    then show ?thesis by simp
+  qed
+qed
+
+lemma dg_If: "diverge A \<or> getStuck A \<Longrightarrow> diverge (If A B C) \<or> getStuck (If A B C)"
+proof -
+  assume dg: "diverge A \<or> getStuck A"
+  obtain h where h: "h \<notin> FVars A \<union> FVars B \<union> FVars C"
+    by (meson arb_element finite_FVars finite_Un)
+  then have hA: "h \<notin> FVars A" and hB: "h \<notin> FVars B" and hC: "h \<notin> FVars C" by auto
+  have ctx: "eval_ctx h (If (Var h) B C)"
+    by (rule eval_ctx.intros(9)[OF eval_ctx.intros(1) hB hC])
+  have push: "(If (Var h) B C)[A <- h] = If A B C" using hB hC by simp
+  show ?thesis
+  proof (cases "diverge A")
+    case True then show ?thesis using div_ctx[OF ctx True] push by simp
+  next
+    case False
+    then have "getStuck ((If (Var h) B C)[A <- h])" using getStuck_ctx[OF ctx _ hA] dg by blast
+    then show ?thesis using push by simp
+  qed
+qed
+
+lemma dg_App1: "diverge A \<or> getStuck A \<Longrightarrow> diverge (App A B) \<or> getStuck (App A B)"
+proof -
+  assume dg: "diverge A \<or> getStuck A"
+  obtain h where h: "h \<notin> FVars A \<union> FVars B" by (meson arb_element finite_FVars finite_Un)
+  then have hA: "h \<notin> FVars A" and hB: "h \<notin> FVars B" by auto
+  have ctx: "eval_ctx h (App (Var h) B)" by (rule eval_ctx.intros(3)[OF eval_ctx.intros(1) hB])
+  have push: "(App (Var h) B)[A <- h] = App A B" using hB by simp
+  show ?thesis
+  proof (cases "diverge A")
+    case True then show ?thesis using div_ctx[OF ctx True] push by simp
+  next
+    case False
+    then have "getStuck ((App (Var h) B)[A <- h])" using getStuck_ctx[OF ctx _ hA] dg by blast
+    then show ?thesis using push by simp
+  qed
+qed
+
+lemma dg_AppFix2:
+  "is_Fix V \<Longrightarrow> diverge B \<or> getStuck B \<Longrightarrow> diverge (App V B) \<or> getStuck (App V B)"
+proof -
+  assume isf: "is_Fix V" and dg: "diverge B \<or> getStuck B"
+  from isf obtain f x M0 where V: "V = Fix f x M0" unfolding is_Fix_def by blast
+  obtain h where h: "h \<notin> FVars B \<union> FVars M0" by (meson arb_element finite_FVars finite_Un)
+  then have hB: "h \<notin> FVars B" and hM0: "h \<notin> FVars M0" by auto
+  have ctx: "eval_ctx h (App (Fix f x M0) (Var h))"
+    by (rule eval_ctx.intros(2)[OF eval_ctx.intros(1) hM0])
+  have push: "(App (Fix f x M0) (Var h))[B <- h] = App V B" using hM0 V by simp
+  show ?thesis
+  proof (cases "diverge B")
+    case True then show ?thesis using div_ctx[OF ctx True] push by simp
+  next
+    case False
+    then have "getStuck ((App (Fix f x M0) (Var h))[B <- h])" using getStuck_ctx[OF ctx _ hB] dg by blast
+    then show ?thesis using push by simp
+  qed
+qed
+
+lemma dg_Pair1: "diverge A \<or> getStuck A \<Longrightarrow> diverge (term.Pair A B) \<or> getStuck (term.Pair A B)"
+proof -
+  assume dg: "diverge A \<or> getStuck A"
+  obtain h where h: "h \<notin> FVars A \<union> FVars B" by (meson arb_element finite_FVars finite_Un)
+  then have hA: "h \<notin> FVars A" and hB: "h \<notin> FVars B" by auto
+  have ctx: "eval_ctx h (term.Pair (Var h) B)" by (rule eval_ctx.intros(6)[OF eval_ctx.intros(1) hB])
+  have push: "(term.Pair (Var h) B)[A <- h] = term.Pair A B" using hB by simp
+  show ?thesis
+  proof (cases "diverge A")
+    case True then show ?thesis using div_ctx[OF ctx True] push by simp
+  next
+    case False
+    then have "getStuck ((term.Pair (Var h) B)[A <- h])" using getStuck_ctx[OF ctx _ hA] dg by blast
+    then show ?thesis using push by simp
+  qed
+qed
+
+lemma dg_PairV2:
+  "val V \<Longrightarrow> diverge B \<or> getStuck B \<Longrightarrow> diverge (term.Pair V B) \<or> getStuck (term.Pair V B)"
+proof -
+  assume vV: "val V" and dg: "diverge B \<or> getStuck B"
+  obtain h where h: "h \<notin> FVars B \<union> FVars V" by (meson arb_element finite_FVars finite_Un)
+  then have hB: "h \<notin> FVars B" and hV: "h \<notin> FVars V" by auto
+  have ctx: "eval_ctx h (term.Pair V (Var h))"
+    by (rule eval_ctx.intros(7)[OF vV eval_ctx.intros(1) hV])
+  have push: "(term.Pair V (Var h))[B <- h] = term.Pair V B" using hV by simp
+  show ?thesis
+  proof (cases "diverge B")
+    case True then show ?thesis using div_ctx[OF ctx True] push by simp
+  next
+    case False
+    then have "getStuck ((term.Pair V (Var h))[B <- h])" using getStuck_ctx[OF ctx _ hB] dg by blast
+    then show ?thesis using push by simp
+  qed
+qed
+
+lemma dg_Let1:
+  "diverge A \<or> getStuck A \<Longrightarrow> diverge (term.Let xy A B) \<or> getStuck (term.Let xy A B)"
+proof -
+  assume dg: "diverge A \<or> getStuck A"
+  obtain h where h: "h \<notin> FVars A \<union> FVars B \<union> dset xy"
+    by (meson arb_element finite_FVars finite_Un finite_dset)
+  then have hA: "h \<notin> FVars A" and hB: "h \<notin> FVars B" and hxy: "h \<notin> dset xy" by auto
+  have ctx: "eval_ctx h (term.Let xy (Var h) B)"
+    by (rule eval_ctx.intros(8)[OF eval_ctx.intros(1) hB hxy])
+  have push: "(term.Let xy (Var h) B)[A <- h] = term.Let xy A B"
+    using Let_subst_scrutinee[OF hxy hB, of "Var h" A] by simp
+  show ?thesis
+  proof (cases "diverge A")
+    case True then show ?thesis using div_ctx[OF ctx True] push by simp
+  next
+    case False
+    then have "getStuck ((term.Let xy (Var h) B)[A <- h])" using getStuck_ctx[OF ctx _ hA] dg by blast
+    then show ?thesis using push by simp
+  qed
+qed
+
+lemma b5_prop_is_fix:
+  assumes "is_Fix V" and "b5_prop V W P N z"
+  shows "is_Fix W"
+proof -
+  from assms(1) obtain f0 x0 R0 where V0: "V = Fix f0 x0 R0" unfolding is_Fix_def by blast
+  obtain f x R where eq: "Fix f0 x0 R0 = Fix f x R"
+      and fr: "f \<notin> FVars N \<union> FVars P \<union> {z}" "x \<notin> FVars N \<union> FVars P \<union> {z}"
+    using Fix_refresh[of "FVars N \<union> FVars P \<union> {z}" f0 x0 R0] finite_FVars by auto
+  have "V = Fix f x R" using V0 eq by simp
+  then obtain Q' where "W = Fix f x Q'[P <- z]"
+    using assms(2) fr unfolding b5_prop_def by metis
+  then show ?thesis unfolding is_Fix_def by blast
+qed
+
+lemma b6':
+  assumes zN: "z \<notin> FVars N" and ls: "P \<lesssim> N"
+  shows "stuck (U[N <- z]) \<Longrightarrow> diverge (U[P <- z]) \<or> getStuck (U[P <- z])"
+proof (binder_induction U avoiding: N P z rule: term.strong_induct,
+    goal_cases Zero Succ Pred If Var App Fix Pair Let)
+  case Zero
+  then show ?case by (simp add: not_stuck_Zero)
+next
+  case (Succ M)
+  from Succ(2) have "stuck (Succ (M[N <- z]))" by simp
+  then consider (r) "val (M[N <- z]) \<and> \<not> num (M[N <- z])" | (c) "stuck (M[N <- z])"
+    using stuck_Succ by blast
+  then show ?case
+  proof cases
+    case c
+    then have "diverge (M[P <- z]) \<or> getStuck (M[P <- z])" using Succ(1) by blast
+    then have "diverge (Succ (M[P <- z])) \<or> getStuck (Succ (M[P <- z]))" by (rule dg_Succ)
+    then show ?thesis by simp
+  next
+    case r
+    then have vM: "val (M[N <- z])" and nnM: "\<not> num (M[N <- z])" by auto
+    from b5[OF vM zN _ ls, of M] have
+      "diverge (M[P <- z]) \<or> (\<exists>W. val W \<and> M[P <- z] \<rightarrow>* W \<and> b5_prop (M[N <- z]) W P N z)"
+      using betas.refl beta_star_def by auto
+    then show ?thesis
+    proof
+      assume "diverge (M[P <- z])"
+      then have "diverge (Succ (M[P <- z])) \<or> getStuck (Succ (M[P <- z]))" using dg_Succ by blast
+      then show ?thesis by simp
+    next
+      assume "\<exists>W. val W \<and> M[P <- z] \<rightarrow>* W \<and> b5_prop (M[N <- z]) W P N z"
+      then obtain W where vW: "val W" and sW: "M[P <- z] \<rightarrow>* W" and bp: "b5_prop (M[N <- z]) W P N z" by blast
+      have "\<not> num W" using bp nnM vM b5_prop_not_num by blast
+      then have "stuckEx (Succ W)" using vW stuckEx.intros(1) by blast
+      then have "stuck (Succ W)" using stuckEx_imp_stuck by blast
+      moreover have "Succ (M[P <- z]) \<rightarrow>* Succ W" using Succ_beta_star sW by blast
+      ultimately have "getStuck (Succ (M[P <- z]))" using getStuck_def by blast
+      then show ?thesis by simp
+    qed
+  qed
+next
+  case (Pred M)
+  from Pred(2) have "stuck (Pred (M[N <- z]))" by simp
+  then consider (r) "val (M[N <- z]) \<and> \<not> num (M[N <- z])" | (c) "stuck (M[N <- z])"
+    using stuck_Pred by blast
+  then show ?case
+  proof cases
+    case c
+    then have "diverge (M[P <- z]) \<or> getStuck (M[P <- z])" using Pred(1) by blast
+    then have "diverge (Pred (M[P <- z])) \<or> getStuck (Pred (M[P <- z]))" by (rule dg_Pred)
+    then show ?thesis by simp
+  next
+    case r
+    then have vM: "val (M[N <- z])" and nnM: "\<not> num (M[N <- z])" by auto
+    from b5[OF vM zN _ ls, of M] have
+      "diverge (M[P <- z]) \<or> (\<exists>W. val W \<and> M[P <- z] \<rightarrow>* W \<and> b5_prop (M[N <- z]) W P N z)"
+      using betas.refl beta_star_def by auto
+    then show ?thesis
+    proof
+      assume "diverge (M[P <- z])"
+      then have "diverge (Pred (M[P <- z])) \<or> getStuck (Pred (M[P <- z]))" using dg_Pred by blast
+      then show ?thesis by simp
+    next
+      assume "\<exists>W. val W \<and> M[P <- z] \<rightarrow>* W \<and> b5_prop (M[N <- z]) W P N z"
+      then obtain W where vW: "val W" and sW: "M[P <- z] \<rightarrow>* W" and bp: "b5_prop (M[N <- z]) W P N z" by blast
+      have "\<not> num W" using bp nnM vM b5_prop_not_num by blast
+      then have "stuckEx (Pred W)" using vW stuckEx.intros(5) by blast
+      then have "stuck (Pred W)" using stuckEx_imp_stuck by blast
+      moreover have "Pred (M[P <- z]) \<rightarrow>* Pred W" using Pred_beta_star sW by blast
+      ultimately have "getStuck (Pred (M[P <- z]))" using getStuck_def by blast
+      then show ?thesis by simp
+    qed
+  qed
+next
+  case (If M N2 P2)
+  from If(4) have "stuck (If (M[N <- z]) (N2[N <- z]) (P2[N <- z]))" by simp
+  then consider (r) "val (M[N <- z]) \<and> \<not> num (M[N <- z])" | (c) "stuck (M[N <- z])"
+    using stuck_If by blast
+  then show ?case
+  proof cases
+    case c
+    then have "diverge (M[P <- z]) \<or> getStuck (M[P <- z])" using If(1) by blast
+    then have "diverge (If (M[P <- z]) (N2[P <- z]) (P2[P <- z])) \<or> getStuck (If (M[P <- z]) (N2[P <- z]) (P2[P <- z]))"
+      by (rule dg_If)
+    then show ?thesis by simp
+  next
+    case r
+    then have vM: "val (M[N <- z])" and nnM: "\<not> num (M[N <- z])" by auto
+    from b5[OF vM zN _ ls, of M] have
+      "diverge (M[P <- z]) \<or> (\<exists>W. val W \<and> M[P <- z] \<rightarrow>* W \<and> b5_prop (M[N <- z]) W P N z)"
+      using betas.refl beta_star_def by auto
+    then show ?thesis
+    proof
+      assume "diverge (M[P <- z])"
+      then have "diverge (If (M[P <- z]) (N2[P <- z]) (P2[P <- z])) \<or> getStuck (If (M[P <- z]) (N2[P <- z]) (P2[P <- z]))"
+        using dg_If by blast
+      then show ?thesis by simp
+    next
+      assume "\<exists>W. val W \<and> M[P <- z] \<rightarrow>* W \<and> b5_prop (M[N <- z]) W P N z"
+      then obtain W where vW: "val W" and sW: "M[P <- z] \<rightarrow>* W" and bp: "b5_prop (M[N <- z]) W P N z" by blast
+      have "\<not> num W" using bp nnM vM b5_prop_not_num by blast
+      then have "stuckEx (If W (N2[P <- z]) (P2[P <- z]))" using vW stuckEx.intros(2) by blast
+      then have "stuck (If W (N2[P <- z]) (P2[P <- z]))" using stuckEx_imp_stuck by blast
+      moreover have "If (M[P <- z]) (N2[P <- z]) (P2[P <- z]) \<rightarrow>* If W (N2[P <- z]) (P2[P <- z])"
+        using If_beta_star sW by blast
+      ultimately have "getStuck (If (M[P <- z]) (N2[P <- z]) (P2[P <- z]))" using getStuck_def by blast
+      then show ?thesis by simp
+    qed
+  qed
+next
+  case (Var y)
+  show ?case
+  proof (cases "y = z")
+    case False
+    then have "stuck (Var y)" using Var(1) by simp
+    then show ?thesis using not_stuck_Var by blast
+  next
+    case True
+    then have sN: "stuck N" using Var(1) by simp
+    have pP: "(Var y)[P <- z] = P" using True by simp
+    show ?thesis
+    proof (cases "diverge P")
+      case True then show ?thesis using pP by simp
+    next
+      case False
+      then obtain Nf where Nf: "normal Nf" "P \<rightarrow>* Nf" "N \<rightarrow>* Nf"
+        using ls diverge_or_normalizes[of P] unfolding less_defined_def normalizes_def by auto
+      have "N = Nf" using Nf(3) stucks_are_normal[OF sN] unfolding beta_star_def normal_def
+        by (metis betas.cases)
+      then have "P \<rightarrow>* N" using Nf(2) by simp
+      then have "getStuck P" using sN getStuck_def by blast
+      then show ?thesis using pP by simp
+    qed
+  qed
+next
+  case (App M1 M2)
+  from App(3) have stApp: "stuck (App (M1[N <- z]) (M2[N <- z]))" by simp
+  consider (redex) "val (M1[N <- z]) \<and> \<not> is_Fix (M1[N <- z])"
+    | (ctx1) "stuck (M1[N <- z])"
+    | (ctxf) "is_Fix (M1[N <- z]) \<and> stuck (M2[N <- z])"
+    using stApp stuck_App by blast
+  then show ?case
+  proof cases
+    case ctx1
+    then have "diverge (M1[P <- z]) \<or> getStuck (M1[P <- z])" using App(1) by blast
+    then have "diverge (App (M1[P <- z]) (M2[P <- z])) \<or> getStuck (App (M1[P <- z]) (M2[P <- z]))"
+      by (rule dg_App1)
+    then show ?thesis by simp
+  next
+    case redex
+    then have vM1: "val (M1[N <- z])" and nf: "\<not> is_Fix (M1[N <- z])" by auto
+    from b5[OF vM1 zN _ ls, of M1] have
+      "diverge (M1[P <- z]) \<or> (\<exists>W. val W \<and> M1[P <- z] \<rightarrow>* W \<and> b5_prop (M1[N <- z]) W P N z)"
+      using betas.refl beta_star_def by auto
+    then show ?thesis
+    proof
+      assume "diverge (M1[P <- z])"
+      then have "diverge (App (M1[P <- z]) (M2[P <- z])) \<or> getStuck (App (M1[P <- z]) (M2[P <- z]))"
+        using dg_App1 by blast
+      then show ?thesis by simp
+    next
+      assume "\<exists>W. val W \<and> M1[P <- z] \<rightarrow>* W \<and> b5_prop (M1[N <- z]) W P N z"
+      then obtain W where vW: "val W" and sW: "M1[P <- z] \<rightarrow>* W" and bp: "b5_prop (M1[N <- z]) W P N z" by blast
+      have "\<not> is_Fix W" using vM1 nf bp b5_prop_not_fix unfolding is_Fix_def by blast
+      then have "stuckEx (App W (M2[P <- z]))" using vW stuckEx.intros(3) by blast
+      then have "stuck (App W (M2[P <- z]))" using stuckEx_imp_stuck by blast
+      moreover have "App (M1[P <- z]) (M2[P <- z]) \<rightarrow>* App W (M2[P <- z])" using App_beta_star sW by blast
+      ultimately have "getStuck (App (M1[P <- z]) (M2[P <- z]))" using getStuck_def by blast
+      then show ?thesis by simp
+    qed
+  next
+    case ctxf
+    then have isf: "is_Fix (M1[N <- z])" and st2: "stuck (M2[N <- z])" by auto
+    have ihM2: "diverge (M2[P <- z]) \<or> getStuck (M2[P <- z])" using App(2) st2 by blast
+    have vM1: "val (M1[N <- z])" using isf by (metis is_Fix_def val.intros(4))
+    from b5[OF vM1 zN _ ls, of M1] have
+      "diverge (M1[P <- z]) \<or> (\<exists>W. val W \<and> M1[P <- z] \<rightarrow>* W \<and> b5_prop (M1[N <- z]) W P N z)"
+      using betas.refl beta_star_def by auto
+    then show ?thesis
+    proof
+      assume "diverge (M1[P <- z])"
+      then have "diverge (App (M1[P <- z]) (M2[P <- z])) \<or> getStuck (App (M1[P <- z]) (M2[P <- z]))"
+        using dg_App1 by blast
+      then show ?thesis by simp
+    next
+      assume "\<exists>W. val W \<and> M1[P <- z] \<rightarrow>* W \<and> b5_prop (M1[N <- z]) W P N z"
+      then obtain W where vW: "val W" and sW: "M1[P <- z] \<rightarrow>* W" and bp: "b5_prop (M1[N <- z]) W P N z" by blast
+      have "is_Fix W" using isf bp b5_prop_is_fix by blast
+      then have "diverge (App W (M2[P <- z])) \<or> getStuck (App W (M2[P <- z]))" using ihM2 dg_AppFix2 by blast
+      moreover have "App (M1[P <- z]) (M2[P <- z]) \<rightarrow>* App W (M2[P <- z])" using App_beta_star sW by blast
+      ultimately have "diverge (App (M1[P <- z]) (M2[P <- z])) \<or> getStuck (App (M1[P <- z]) (M2[P <- z]))"
+        by (metis beta_star_diverge_back beta_star_sums getStuck_def)
+      then show ?thesis by simp
+    qed
+  qed
+next
+  case (Fix f x M)
+  then have "stuck (Fix f x (M[N <- z]))" by simp
+  then show ?case using not_stuck_Fix by blast
+next
+  case (Pair M1 M2)
+  from Pair(3) have "stuck (term.Pair (M1[N <- z]) (M2[N <- z]))" by simp
+  then consider (ctx1) "stuck (M1[N <- z])" | (ctx2) "val (M1[N <- z]) \<and> stuck (M2[N <- z])"
+    using stuck_Pair by blast
+  then show ?case
+  proof cases
+    case ctx1
+    then have "diverge (M1[P <- z]) \<or> getStuck (M1[P <- z])" using Pair(1) by blast
+    then have "diverge (term.Pair (M1[P <- z]) (M2[P <- z])) \<or> getStuck (term.Pair (M1[P <- z]) (M2[P <- z]))"
+      by (rule dg_Pair1)
+    then show ?thesis by simp
+  next
+    case ctx2
+    then have vM1: "val (M1[N <- z])" and st2: "stuck (M2[N <- z])" by auto
+    have ihM2: "diverge (M2[P <- z]) \<or> getStuck (M2[P <- z])" using Pair(2) st2 by blast
+    from b5[OF vM1 zN _ ls, of M1] have
+      "diverge (M1[P <- z]) \<or> (\<exists>W. val W \<and> M1[P <- z] \<rightarrow>* W \<and> b5_prop (M1[N <- z]) W P N z)"
+      using betas.refl beta_star_def by auto
+    then show ?thesis
+    proof
+      assume "diverge (M1[P <- z])"
+      then have "diverge (term.Pair (M1[P <- z]) (M2[P <- z]))" by (simp add: Pair_div)
+      then show ?thesis by simp
+    next
+      assume "\<exists>W. val W \<and> M1[P <- z] \<rightarrow>* W \<and> b5_prop (M1[N <- z]) W P N z"
+      then obtain W where vW: "val W" and sW: "M1[P <- z] \<rightarrow>* W" by blast
+      have "diverge (term.Pair W (M2[P <- z])) \<or> getStuck (term.Pair W (M2[P <- z]))"
+        using vW ihM2 dg_PairV2 by blast
+      moreover have "term.Pair (M1[P <- z]) (M2[P <- z]) \<rightarrow>* term.Pair W (M2[P <- z])"
+        using Pair_beta_star sW vW betas.refl beta_star_def by blast
+      ultimately have "diverge (term.Pair (M1[P <- z]) (M2[P <- z])) \<or> getStuck (term.Pair (M1[P <- z]) (M2[P <- z]))"
+        by (metis beta_star_diverge_back beta_star_sums getStuck_def)
+      then show ?thesis by simp
+    qed
+  qed
+next
+  case (Let xy M1 M2)
+  have av1: "z \<notin> dset xy" using Let(3) by simp
+  have av2: "dset xy \<inter> FVars N = {}" using Let(1) by simp
+  have av3: "dset xy \<inter> FVars P = {}" using Let(2) by simp
+  have subN: "(term.Let xy M1 M2)[N <- z] = term.Let xy (M1[N <- z]) (M2[N <- z])"
+    by (rule usubst_Let[OF av1 av2])
+  have subP: "(term.Let xy M1 M2)[P <- z] = term.Let xy (M1[P <- z]) (M2[P <- z])"
+    by (rule usubst_Let[OF av1 av3])
+  from Let(6) have stLet: "stuck (term.Let xy (M1[N <- z]) (M2[N <- z]))" using subN by simp
+  consider (r) "val (M1[N <- z]) \<and> \<not> is_Pair (M1[N <- z])" | (c) "stuck (M1[N <- z])"
+    using stLet stuck_Let by blast
+  then show ?case
+  proof cases
+    case c
+    then have "diverge (M1[P <- z]) \<or> getStuck (M1[P <- z])" using Let(4) by blast
+    then have "diverge (term.Let xy (M1[P <- z]) (M2[P <- z])) \<or> getStuck (term.Let xy (M1[P <- z]) (M2[P <- z]))"
+      by (rule dg_Let1)
+    then show ?thesis using subP by simp
+  next
+    case r
+    then have vM1: "val (M1[N <- z])" and np: "\<not> is_Pair (M1[N <- z])" by auto
+    from b5[OF vM1 zN _ ls, of M1] have
+      "diverge (M1[P <- z]) \<or> (\<exists>W. val W \<and> M1[P <- z] \<rightarrow>* W \<and> b5_prop (M1[N <- z]) W P N z)"
+      using betas.refl beta_star_def by auto
+    then show ?thesis
+    proof
+      assume "diverge (M1[P <- z])"
+      then have "diverge (term.Let xy (M1[P <- z]) (M2[P <- z])) \<or> getStuck (term.Let xy (M1[P <- z]) (M2[P <- z]))"
+        using dg_Let1 by blast
+      then show ?thesis using subP by simp
+    next
+      assume "\<exists>W. val W \<and> M1[P <- z] \<rightarrow>* W \<and> b5_prop (M1[N <- z]) W P N z"
+      then obtain W where vW: "val W" and sW: "M1[P <- z] \<rightarrow>* W" and bp: "b5_prop (M1[N <- z]) W P N z" by blast
+      have "\<not> is_Pair W" using vM1 np bp b5_prop_not_pair unfolding is_Pair_def by blast
+      then have "stuckEx (term.Let xy W (M2[P <- z]))" using vW stuckEx.intros(4) by (auto simp: is_Pair_def)
+      then have "stuck (term.Let xy W (M2[P <- z]))" using stuckEx_imp_stuck by blast
+      moreover have "term.Let xy (M1[P <- z]) (M2[P <- z]) \<rightarrow>* term.Let xy W (M2[P <- z])" using Let_beta_star sW by blast
+      ultimately have "getStuck (term.Let xy (M1[P <- z]) (M2[P <- z]))" using getStuck_def by blast
+      then show ?thesis using subP by simp
+    qed
+  qed
+qed
+
+
 lemma b6:
   assumes gsM: "getStuck M[N <- z]" and ls: "P \<lesssim> N" and znN: "z \<notin> FVars N"
   shows "diverge M[P <- z] \<or> getStuck M[P <- z]"
 proof -
-  obtain M' where "M[N <- z] \<rightarrow>* M'" and "stuck M'" using gsM getStuck_def by auto
-  then obtain R where *: "diverge M[P <- z] \<or> (M[P <- z] \<rightarrow>* R[P <- z] \<and> M' = R[N <- z])" 
+  obtain M' where redM: "M[N <- z] \<rightarrow>* M'" and stM': "stuck M'" using gsM getStuck_def by auto
+  then obtain R where "diverge M[P <- z] \<or> (M[P <- z] \<rightarrow>* R[P <- z] \<and> M' = R[N <- z])"
     unfolding beta_star_def
     using ls znN stucks_are_normal[of M'] b4[of M N z _ M' P] by blast
   then consider (A) "M[P <- z] \<rightarrow>* R[P <- z] \<and> M' = R[N <- z]" | (B) "diverge M[P <- z]" by auto
   then show ?thesis
   proof cases
+    case B then show ?thesis by simp
+  next
     case A
-    then obtain E hole Q where "eval_ctx hole E" and "R[N <- z] = E[Q <- hole]" and "stuckEx Q"
-      using \<open>stuck M'\<close> unfolding stuck_def by metis
-    then obtain F Q' where "eval_ctx hole F" and "F[N <- z] = E" and "R = F[Q' <- hole]" and "Q'[N <- z] = Q" 
-      using b2[of hole E R N z Q] (*need \<not> blocked z R, need hole freshness*) sorry
-    show ?thesis
-    proof(cases "Q' = Var z")
-      case True
-      then have "blocked z R" using \<open>eval_ctx hole F\<close> \<open>R = F[Q' <- hole]\<close> unfolding blocked_def by auto
-      thm blocked_fresh_hole[of "FVars P" z R]
-      then obtain F' hole' where 
-        "\<forall>N. hole' \<notin> FVars N \<longrightarrow> eval_ctx hole' F'[N <- z]" and
-        new_ctx: "R = F'[Var z <- hole']" and
-        fresh_hole: "hole' \<notin> insert z (FVars P)"
-        using finite_FVars blocked_fresh_hole[of "FVars P" z R] by auto
-      then have FP: "eval_ctx hole' F'[P <- z]" by simp
-      from True have "Q = N" using \<open>Q'[N <- z] = Q\<close> by simp
-      then have "diverge R[P <- z] \<or> getStuck R[P <- z]"
-      proof (cases "diverge P")
-        case True
-        have "R[P <- z] = F'[P <- z][P <- hole']" 
-          using new_ctx fresh_hole usubst_usubst[of hole' z P F' "Var z"] by simp
-        then have "diverge R[P <- z]" using FP True div_ctx[of hole' "F'[P <- z]" P] by simp
-        then show ?thesis using exI by blast
-      next
-        case False
-        then obtain N' where "N \<rightarrow>* N'" and "P \<rightarrow>* N'" and "normal N'"
-          using \<open>P \<lesssim> N\<close> unfolding less_defined_def
-          using diverge_or_normalizes[of P] by auto
-        then have "F'[Q' <- hole'][P <- z] = F'[P <- z][P <- hole']"
-          using fresh_hole usubst_usubst[of hole' z P F' Q'] \<open>Q' = Var z\<close>
-          by auto
-        then have t1: "R[P <- z] \<rightarrow>* F'[P <- z][N' <- hole']"
-          using True new_ctx insertI2
-          using \<open>P \<rightarrow>* N'\<close> FP eval_ctx_beta_star[of hole' "F'[P <- z]" P N']
-          by auto
-        have "stuckEx N'" 
-          using \<open>N \<rightarrow>* N'\<close> \<open>Q = N\<close> \<open>stuckEx Q\<close> betas.cases[of N _ N'] unfolding beta_star_def
-          using eval_ctx.intros(1) usubst_simps(5) stucks_are_normal[of N] unfolding normal_def stuck_def 
-          by metis
-        then have "stuck F'[P <- z][N' <- hole']" unfolding stuck_def using FP by auto
-        then have "getStuck R[P <- z]" unfolding getStuck_def using t1 by auto
-        then show ?thesis by auto
-      qed
-      then show ?thesis unfolding getStuck_def
-        using A beta_star_diverge_back beta_star_sums by blast
-    next                              
-      case False
-      have "stuckEx Q'[N <- z]" using \<open>Q'[N <- z] = Q\<close> \<open>stuckEx Q\<close> by simp
-      then have "diverge Q'[P <- z] \<or> getStuck Q'[P <- z]"
-      proof(cases "Q'[N <- z]" rule:stuckEx.cases)
-        case (1 V)
-        then obtain V' where "Q' = Succ V'" and "V = V'[N <- z]"
-          using False subst_Succ_inversion[of Q' N z V] by auto
-        then consider (A) "V'[P <- z] \<Up>" | (B) "\<exists>W. val W \<and> V'[P <- z] \<rightarrow>* W \<and> b5_prop V W P N z"
-          using 1(2) znN ls betas.refl b5[of V z N V' P] unfolding beta_star_def by auto
-        then show ?thesis
-        proof(cases)
-          case A
-          obtain thole :: 'a where "eval_ctx thole (Succ (Var thole))" using eval_ctx.intros by blast
-          moreover have "Q'[P <- z] = (Succ (Var thole)) [V'[P <- z] <- thole]" using \<open>Q' = Succ V'\<close> by auto
-          ultimately show ?thesis using div_ctx A by metis
-        next
-          case B
-          then obtain W where "val W" and "V'[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
-          then have "\<not> num W" using 1 b5_prop_not_num[of V] by blast
-          then have "stuckEx (Succ W)" using \<open>val W\<close> stuckEx.intros by auto
-          then have "stuck (Succ W)"
-            using eval_ctx.intros(1) stuck_def by force
-          then have "getStuck (Succ V'[P <- z])" unfolding getStuck_def
-            using Succ_beta_star \<open>V'[P <- z] \<rightarrow>* W\<close> beta_star_def by blast
-          then show ?thesis using \<open>Q' = Succ V'\<close> by auto
-        qed
-      next
-        case (2 V P1 P2)
-        then obtain V' P1' P2' where "Q' = If V' P1' P2'" and 
-          "V'[N <- z] = V" and "P1'[N <- z] = P1" and "P2'[N <- z] = P2" 
-          using False subst_If_inversion[of Q' N z V P1 P2] by auto
-        then consider (A) "V'[P <- z] \<Up>" | (B) "\<exists>W. val W \<and> V'[P <- z] \<rightarrow>* W \<and> b5_prop V W P N z"
-          using 2(2) znN ls betas.refl b5[of V z N V' P] unfolding beta_star_def by auto
-        then show ?thesis
-        proof(cases)
-          case A
-          obtain thole where "eval_ctx thole (If (Var thole) P1'[P <- z] P2'[P <- z])" and *: "thole \<notin> FVars P1'[P <- z]" and **: "thole \<notin> FVars P2'[P <- z]"
-            using eval_ctx.intros(1, 9) 
-            using ex_new_if_finite finite_FVars infinite_UNIV
-            by (metis Un_iff term.set(4))
-          moreover have "Q'[P <- z] = (If (Var thole) P1'[P <- z] P2'[P <- z]) [V'[P <- z] <- thole]" 
-            using \<open>Q' = If V' P1' P2'\<close> * ** by auto
-          ultimately show ?thesis using div_ctx A by metis
-        next
-          case B
-          then obtain W where "val W" and "V'[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
-          then have "\<not> num W" using 2 b5_prop_not_num[of V] by blast
-          then have "stuckEx (If W P1'[P <- z] P2'[P <- z])" using \<open>val W\<close> stuckEx.intros by auto
-          then have "stuck (If W P1'[P <- z] P2'[P <- z])"
-            using eval_ctx.intros(1) stuck_def by force
-          then have "getStuck (If V'[P <- z] P1'[P <- z] P2'[P <- z])" unfolding getStuck_def
-            using If_beta_star \<open>V'[P <- z] \<rightarrow>* W\<close> beta_star_def by blast
-          then show ?thesis using \<open>Q' = If V' P1' P2'\<close> by auto
-        qed
-      next
-        case (3 V M)
-        then obtain R1 R2 where "Q' = App R1 R2" and "R1[N <- z] = V" and "R2[N <- z] = M"
-          using False subst_App_inversion[of Q' N z V M] by blast
-        then consider (A) "R1[P <- z] \<Up>" | (B) "\<exists>W. val W \<and> R1[P <- z] \<rightarrow>* W \<and> b5_prop V W P N z"
-          using 3(2) znN ls betas.refl b5[of V z N R1 P] unfolding beta_star_def by auto
-        then show ?thesis
-        proof(cases)
-          case A
-          obtain thole where *: "eval_ctx thole (App (Var thole) R2[P <- z])" and "thole \<notin> FVars R2[P <- z]"
-            using eval_ctx.intros(1, 3)
-            by (metis ex_new_if_finite finite_FVars infinite_UNIV)
-          then have "Q'[P <- z] = (App (Var thole) R2[P <- z])[R1[P <- z] <- thole]" 
-            using \<open>Q' = App R1 R2\<close> usubst_simps(6) by simp
-          then show ?thesis using A * div_ctx by metis
-        next
-          case B
-          then obtain W where "val W" and *: "R1[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
-          then have "\<nexists>f x Q. W = Fix f x Q" using 3(2, 3) b5_prop_not_fix by (metis is_Fix_def)
-          then have "stuckEx (App W R2[P <- z])" using \<open>val W\<close> stuckEx.intros(3)[of W] by (auto simp: is_Fix_def)
-          moreover obtain thole :: 'a where "eval_ctx thole (Var thole)" using eval_ctx.intros by auto
-          ultimately have "stuck (App W R2[P <- z])" unfolding stuck_def
-            by (meson eval_ctx.intros(1) usubst_simps(5))
-          then have "getStuck (App R1[P <- z] R2[P <- z])" unfolding getStuck_def
-            using App_beta_star * by auto
-          then show ?thesis using \<open>Q' = App R1 R2\<close> by simp
-        qed    
-        next
-          case (4 V xy0 M0)
-          obtain xy M where LR: "term.Let xy0 V M0 = term.Let xy V M"
-            and avd: "dset xy \<inter> ({z} \<union> FVars N \<union> FVars P) = {}"
-            using Let_refresh[of "{z} \<union> FVars N \<union> FVars P" xy0 V M0] finite_FVars by auto
-          have av1: "z \<notin> dset xy" and av2: "FVars N \<inter> dset xy = {}"
-            and av3: "FVars P \<inter> dset xy = {}" using avd by auto
-          have dP: "dset xy \<inter> FVars P = {}" using av3 by blast
-          have QLet: "Q'[N <- z] = term.Let xy V M" using 4 LR by (metis (no_types))
-          from QLet False av1 av2 obtain V' M' where q': "Q' = term.Let xy V' M'"
-            and vN: "V'[N <- z] = V" and mN: "M'[N <- z] = M"
-            using subst_Let_inversion[of Q' N z xy V M] by blast
-          have QP: "Q'[P <- z] = term.Let xy (V'[P <- z]) (M'[P <- z])"
-            unfolding q' by (rule usubst_Let[OF av1 dP])
-          consider (A) "V'[P <- z] \<Up>" | (B) "\<exists>W. val W \<and> V'[P <- z] \<rightarrow>* W \<and> b5_prop V W P N z"
-            using 4(2) vN znN ls betas.refl b5[of V z N V' P] unfolding beta_star_def by auto
-          then show ?thesis
-          proof(cases)
-            case A
-            obtain thole :: 'a where th: "thole \<notin> FVars M'[P <- z] \<union> dset xy"
-              by (meson arb_element finite_FVars finite_Un finite_dset)
-            then have thd: "thole \<notin> dset xy" and thM: "thole \<notin> FVars M'[P <- z]" by auto
-            have tctx: "eval_ctx thole (term.Let xy (Var thole) M'[P <- z])"
-              using eval_ctx.intros(1)[of thole] eval_ctx.intros(8)[of thole "Var thole" "M'[P <- z]" xy] thd thM by auto
-            have "Q'[P <- z] = (term.Let xy (Var thole) M'[P <- z]) [V'[P <- z] <- thole]"
-              using QP Let_subst_scrutinee[OF thd thM, of "Var thole" "V'[P <- z]"] by simp
-            then show ?thesis using tctx div_ctx A by metis
-          next
-            case B
-            then obtain W where "val W" and sW: "V'[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
-            then have "\<nexists>W1 W2. W = Pair W1 W2" using 4 b5_prop_not_pair[of V] by (metis is_Pair_def)
-            then have "stuckEx (term.Let xy W M'[P <- z])" using \<open>val W\<close> stuckEx.intros by (auto simp: is_Pair_def)
-            then have "stuck (term.Let xy W M'[P <- z])"
-              using eval_ctx.intros(1) stuck_def by force
-            then have gs: "getStuck (term.Let xy (V'[P <- z]) (M'[P <- z]))" unfolding getStuck_def
-              using Let_beta_star[of "V'[P <- z]" W xy "M'[P <- z]"] sW
-              unfolding beta_star_def by auto
-            show ?thesis using gs QP by simp
-          qed
-      next
-        case (5 V)
-        then obtain V' where "Q' = Pred V'" and "V = V'[N <- z]"
-          using False subst_Pred_inversion[of Q' N z V] by auto
-        then consider (A) "V'[P <- z] \<Up>" | (B) "\<exists>W. val W \<and> V'[P <- z] \<rightarrow>* W \<and> b5_prop V W P N z"
-          using 5(2) znN ls betas.refl b5[of V z N V' P] unfolding beta_star_def by auto
-        then show ?thesis
-        proof(cases)
-          case A
-          obtain thole :: 'a where "eval_ctx thole (Pred (Var thole))" using eval_ctx.intros by blast
-          moreover have "Q'[P <- z] = (Pred (Var thole)) [V'[P <- z] <- thole]" using \<open>Q' = Pred V'\<close> by auto
-          ultimately show ?thesis using div_ctx A by metis
-        next
-          case B
-          then obtain W where "val W" and "V'[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
-          then have "\<not> num W" using 5 b5_prop_not_num[of V] by blast
-          then have "stuckEx (Pred W)" using \<open>val W\<close> stuckEx.intros by blast
-          then have "stuck (Pred W)"
-            using eval_ctx.intros(1) stuck_def by force
-          then have "getStuck (Pred V'[P <- z])" unfolding getStuck_def
-            using Pred_beta_star \<open>V'[P <- z] \<rightarrow>* W\<close> beta_star_def by blast
-          then show ?thesis using \<open>Q' = Pred V'\<close> by auto
-        qed
-      qed
-      then show ?thesis sorry
-      (*how would be obtain stuck R[P <- z] from stuckEx Q'[P <- z], knowing that I may have F[P <- z] not an eval_ctx*)
-    qed
-  qed(auto)
+    then have red: "M[P <- z] \<rightarrow>* R[P <- z]" and eq: "M' = R[N <- z]" by auto
+    have "stuck (R[N <- z])" using eq stM' by simp
+    then have "diverge (R[P <- z]) \<or> getStuck (R[P <- z])" using b6'[OF znN ls] by blast
+    then show ?thesis
+      using red by (metis beta_star_diverge_back beta_star_sums getStuck_def)
+  qed
 qed
 
 section \<open>Thm 4.7\<close>
 
-lemma stuck_not_val: "stuck M \<Longrightarrow> \<not> val M"
-  unfolding stuck_def using val_ctx_plug stuckEx_not_val by metis
 
 lemma beta_star_normal_unique:
   assumes "M \<rightarrow>* V" and "normal V" and "M \<rightarrow>* V'" and "normal V'"
@@ -5201,5 +5817,6 @@ next
   case False
   then show ?thesis using subst_idle[of z M] by auto
 qed
+
 
 end
