@@ -3960,19 +3960,41 @@ next
       using b5_helper[of M N z "Fix f x R" P U] 4 val.intros(4) U1 U2 by blast
   next
     case False
-    have "f \<noteq> z" and "f \<notin> FVars N" and "x \<noteq> z" and "x \<notin> FVars N" and "f \<notin> FVars P" and "x \<notin> FVars P" sorry
-    then obtain Q where q1: "U = Fix f x Q" and q2: "Q[N <- z] = R"
-      using subst_Fix_inversion[of U N z f x R] \<open>U \<noteq> Var z\<close> U1
+    obtain f' x' R' where V_eq: "Fix f x R = Fix f' x' R'"
+      and fz: "f' \<noteq> z" and fN: "f' \<notin> FVars N" and fP: "f' \<notin> FVars P"
+      and xz: "x' \<noteq> z" and xN: "x' \<notin> FVars N" and xP: "x' \<notin> FVars P"
+      using Fix_refresh[of "{z} \<union> FVars N \<union> FVars P" f x R] finite_FVars by auto
+    from U1 V_eq have U1': "Fix f' x' R' = U[N <- z]" by simp
+    then obtain Q where q1: "U = Fix f' x' Q" and q2: "Q[N <- z] = R'"
+      using subst_Fix_inversion[of U N z f' x' R'] \<open>U \<noteq> Var z\<close> fz fN xz xN
       by auto
-    then have "b5_prop (Fix f x R) U[P <- z] P N z" unfolding b5_prop_def
-      using \<open>f \<noteq> z\<close> \<open>x \<noteq> z\<close> \<open>f \<notin> FVars P\<close> \<open>x \<notin> FVars P\<close> haveFix.intros(1)
-(*
-      by (metis term.distinct(63) usubst_simps(7))
-*)
-      sorry
-    moreover have "val U[P <- z]" using q1 val.intros(4)
-      by (simp add: \<open>f \<noteq> z\<close> \<open>f \<notin> FVars P\<close> \<open>x \<noteq> z\<close> \<open>x \<notin> FVars P\<close>)
-    ultimately show ?thesis using U2 by auto
+    have bp: "b5_prop (Fix f' x' R') U[P <- z] P N z" unfolding b5_prop_def
+      apply (intro conjI allI impI)
+      subgoal using haveFix.intros(1) by blast
+      subgoal by simp
+      subgoal premises prems for fa xa Ra
+      proof -
+        have eq: "Fix f' x' R' = Fix fa xa Ra" and faf: "fa \<notin> FVars N \<union> FVars P \<union> {z}"
+          and xaf: "xa \<notin> FVars N \<union> FVars P \<union> {z}" using prems by blast+
+        from U1' eq have "U[N <- z] = Fix fa xa Ra" by simp
+        then obtain Q'' where u2: "U = Fix fa xa Q''" and q2'': "Q''[N <- z] = Ra"
+          using subst_Fix_inversion[of U N z fa xa Ra] \<open>U \<noteq> Var z\<close> faf xaf by auto
+        have "U[P <- z] = Fix fa xa (Q''[P <- z])"
+          using u2 usubst_simps(7) faf xaf by auto
+        then show "\<exists>Q. U[P <- z] = Fix fa xa Q[P <- z] \<and> Q[N <- z] = Ra"
+          using q2'' by blast
+      qed
+      done
+    have vU: "val U[P <- z]"
+    proof -
+      have "U[P <- z] = Fix f' x' (Q[P <- z])"
+        unfolding q1 by (simp add: fz fP xz xP)
+      moreover have "val (Fix f' x' (Q[P <- z]))" by (rule val.intros(4))
+      ultimately show ?thesis by simp
+    qed
+    then have "val U[P <- z] \<and> M[P <- z] \<rightarrow>* U[P <- z] \<and> b5_prop (Fix f x R) U[P <- z] P N z"
+      using bp U2 unfolding V_eq by blast
+    then show ?thesis by blast
   qed
 qed
 
@@ -4240,16 +4262,54 @@ proof -
     by auto
 qed
 
+lemma Let_subst_scrutinee:
+  fixes A :: "'a::var term"
+  assumes zd: "z \<notin> dset xy" and zB: "z \<notin> FVars B"
+  shows "(term.Let xy A B)[N <- z] = term.Let xy (A[N <- z]) B"
+proof -
+  have b1: "|dset xy| <o |UNIV::'a set|" by (rule finite_ordLess_infinite2[OF finite_dset infinite_UNIV])
+  have b2: "|FVars A \<union> FVars B \<union> FVars N \<union> {z} \<union> FVars (A[N <- z]) \<union> dset xy| <o |UNIV::'a set|"
+    by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) (simp add: finite_dset)
+  obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+      "g ` dset xy \<inter> (FVars A \<union> FVars B \<union> FVars N \<union> {z} \<union> FVars (A[N <- z]) \<union> dset xy) = {}"
+      "id_on ((FVars A \<union> FVars B \<union> FVars N \<union> {z} \<union> FVars (A[N <- z])) - dset xy) g" "g \<circ> g = id"
+    using eextend_fresh[OF b1 b2 infinite_UNIV,
+        of "(FVars A \<union> FVars B \<union> FVars N \<union> {z} \<union> FVars (A[N <- z])) - dset xy"] by auto
+  have gz: "g z = z" using g(4) zd zB unfolding id_on_def by auto
+  have alpha_out: "term.Let xy A B = term.Let (dmap g xy) A (permute_term g B)"
+    using g by (auto intro!: exI[of _ g] simp: id_on_def)
+  have zd': "z \<notin> dset (dmap g xy)" using g(3) unfolding dpair.set_map[OF g(1) g(2)] by blast
+  have dN': "dset (dmap g xy) \<inter> FVars N = {}" using g(3) unfolding dpair.set_map[OF g(1) g(2)] by blast
+  have dA': "dset (dmap g xy) \<inter> FVars A = {}" using g(3) unfolding dpair.set_map[OF g(1) g(2)] by blast
+  have push: "(term.Let (dmap g xy) A (permute_term g B))[N <- z]
+      = term.Let (dmap g xy) (A[N <- z]) ((permute_term g B)[N <- z])"
+    by (rule usubst_simps(9)[OF zd' dN' dA'])
+  have zpB: "z \<notin> FVars (permute_term g B)"
+  proof
+    assume "z \<in> FVars (permute_term g B)"
+    then obtain w where w: "w \<in> FVars B" and gw: "g w = z" unfolding term.FVars_permute[OF g(1) g(2)] by auto
+    from gw gz have "w = z" using g(1) by (metis bij_is_inj injD)
+    then show False using w zB by simp
+  qed
+  have body: "(permute_term g B)[N <- z] = permute_term g B" using subst_idle[OF zpB] .
+  have alpha_back: "term.Let xy (A[N <- z]) B = term.Let (dmap g xy) (A[N <- z]) (permute_term g B)"
+    using g by (auto intro!: exI[of _ g] simp: id_on_def)
+  show ?thesis unfolding alpha_out push body alpha_back ..
+qed
+
 lemma Let_beta_star: "V \<rightarrow>* V' \<Longrightarrow> Let xy V M \<rightarrow>* Let xy V' M"
 proof -
   assume "V \<rightarrow>* V'"
-  obtain x :: 'a where "eval_ctx x (Let xy (Var x) M)" and "x \<notin> FVars M" and "x \<notin> dset xy"
-    using eval_ctx.intros(1, 9) dset_finite
-    using UnCI arb_element finite_FVars sorry
-  then show ?thesis 
-    using eval_ctx_beta_star[of x "Let xy (Var x) M" V V'] \<open>V \<rightarrow>* V'\<close>
-    sorry
-  thm usubst_simps(9)[of x xy V "Var x" M]
+  obtain x :: 'a where x: "x \<notin> FVars M \<union> dset xy"
+    by (meson arb_element finite_FVars finite_Un finite_dset)
+  then have ctx: "eval_ctx x (Let xy (Var x) M)"
+    using eval_ctx.intros(1)[of x] eval_ctx.intros(8)[of x "Var x" M xy] by auto
+  have e1: "(Let xy (Var x) M)[V <- x] = Let xy V M"
+    using Let_subst_scrutinee[where z=x and xy=xy and B=M and A="Var x" and N=V] x by auto
+  have e2: "(Let xy (Var x) M)[V' <- x] = Let xy V' M"
+    using Let_subst_scrutinee[where z=x and xy=xy and B=M and A="Var x" and N=V'] x by auto
+  show ?thesis
+    using eval_ctx_beta_star[OF ctx \<open>V \<rightarrow>* V'\<close>] unfolding e1 e2 .
 qed
 
 lemma b5_prop_not_fix: 
@@ -4519,6 +4579,39 @@ qed
 
 section \<open>Thm 4.7\<close>
 
+lemma stuck_not_val: "stuck M \<Longrightarrow> \<not> val M"
+  unfolding stuck_def using val_ctx_plug stuckEx_not_val by metis
+
+lemma beta_star_normal_unique:
+  assumes "M \<rightarrow>* V" and "normal V" and "M \<rightarrow>* V'" and "normal V'"
+  shows "V = V'"
+proof -
+  from assms(1) obtain n where n: "M \<rightarrow>[n] V" unfolding beta_star_def by auto
+  from assms(3) obtain m where m: "M \<rightarrow>[m] V'" unfolding beta_star_def by auto
+  have "n \<ge> m" using normalize_longest_beta[OF assms(2) n m] .
+  moreover have "m \<ge> n" using normalize_longest_beta[OF assms(4) m n] .
+  ultimately have "n = m" by simp
+  then show ?thesis using betas_deterministic n m by metis
+qed
+
+lemma val_tau_iff:
+  assumes "val V"
+  shows "(V \<in> \<T>\<lblot>A\<rblot>) = (V \<in> \<lblot>A\<rblot>)"
+proof
+  assume "V \<in> \<T>\<lblot>A\<rblot>"
+  then obtain V' where iA: "V' \<in> \<lblot>A\<rblot>" and sV': "V \<rightarrow>* V'" and vV': "val V'"
+    unfolding tau_semantics.simps by auto
+  have "V \<rightarrow>* V" using beta_star_def betas.refl by blast
+  then have "V = V'"
+    using beta_star_normal_unique[OF _ vals_are_normal[OF assms] sV' vals_are_normal[OF vV']] by blast
+  then show "V \<in> \<lblot>A\<rblot>" using iA by simp
+next
+  assume vin: "V \<in> \<lblot>A\<rblot>"
+  have "V \<rightarrow>* V" using beta_star_def betas.refl by blast
+  then show "V \<in> \<T>\<lblot>A\<rblot>" unfolding tau_semantics.simps
+    using vin assms by (auto intro!: bexI[of _ V])
+qed
+
 inductive finitely_verifiable :: "type \<Rightarrow> bool" where
   "finitely_verifiable Nat"
 | "finitely_verifiable Ok"
@@ -4603,20 +4696,74 @@ proof(induction A arbitrary: M)
   next
     case 2
     consider (A) "\<exists>V. M[N <- z] \<rightarrow>* V \<and> val V" | (B) "getStuck M[N <- z]" | (C) "diverge M[N <- z]"
-      using val_stuck_step diverge_or_normalizes sorry
+    proof -
+      have "diverge M[N <- z] \<or> normalizes M[N <- z]" by (rule diverge_or_normalizes)
+      then show thesis
+      proof
+        assume "diverge M[N <- z]"
+        then show thesis by (rule that(3))
+      next
+        assume "normalizes M[N <- z]"
+        then obtain Nf where nf: "normal Nf" and st: "M[N <- z] \<rightarrow>* Nf"
+          unfolding normalizes_def by auto
+        have "val Nf \<or> stuck Nf" using val_stuck_step[of Nf] nf unfolding normal_def by auto
+        then show thesis
+        proof
+          assume "val Nf" then show thesis using st by (intro that(1)) auto
+        next
+          assume "stuck Nf" then show thesis using st by (intro that(2)) (auto simp: getStuck_def)
+        qed
+      qed
+    qed
     then show ?case
       proof cases
         case A
-        then obtain V where "M[N <- z] \<rightarrow>* V" and "val V" and "V \<notin> \<lblot>Nat\<rblot>"
+        then obtain V where sV: "M[N <- z] \<rightarrow>* V" and vV: "val V" and nV: "V \<notin> \<lblot>Nat\<rblot>"
           using 2 unfolding tau_semantics.simps by blast
-        then obtain W where "diverge M[Q <- z] \<or> M[Q <- z] \<rightarrow>* W" (*W same type of value as V*)
-          using b5[of V z N M Q] b5_prop_def[of V] sorry
-        then show ?thesis sorry
+        have nnV: "\<not> num V" using nV unfolding type_semantics.simps(2) by simp
+        have "diverge M[Q <- z] \<or> (\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z)"
+          using b5[of V z N M Q] vV nzN sV ls by simp
+        then show ?thesis
+        proof
+          assume "diverge M[Q <- z]"
+          then show ?thesis unfolding tau_semantics.simps
+            using diverge_xor_normalizes vals_are_normal normalizes_def by auto
+        next
+          assume "\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z"
+          then obtain W where vW: "val W" and sW: "M[Q <- z] \<rightarrow>* W" and bp: "b5_prop V W Q N z" by auto
+          have nnW: "\<not> num W" using b5_prop_not_num[OF vV nnV bp] .
+          show ?thesis
+          proof
+            assume "M[Q <- z] \<in> \<T>\<lblot>Nat\<rblot>"
+            then obtain n where nn: "num n" and sn: "M[Q <- z] \<rightarrow>* n"
+              unfolding tau_semantics.simps type_semantics.simps(2) by auto
+            have "n = W" using beta_star_normal_unique[OF sn nums_are_normal[OF nn] sW vals_are_normal[OF vW]] .
+            then show False using nn nnW by simp
+          qed
+        qed
       next
         case B
-        then have "diverge M[Q <- z] \<or> getStuck M[Q <- z]"
+        then have disj: "diverge M[Q <- z] \<or> getStuck M[Q <- z]"
           using ls nzN b6[of M N z Q] by auto
-        then show ?thesis unfolding tau_semantics.simps sorry (*need val xor stuck*)
+        show ?thesis
+        proof
+          assume "M[Q <- z] \<in> \<T>\<lblot>Nat\<rblot>"
+          then obtain n where nn: "num n" and sn: "M[Q <- z] \<rightarrow>* n"
+            unfolding tau_semantics.simps type_semantics.simps(2) by auto
+          from disj show False
+          proof
+            assume "diverge M[Q <- z]"
+            then show False
+              using diverge_xor_normalizes[of "M[Q <- z]"] sn nums_are_normal[OF nn] normalizes_def by blast
+          next
+            assume "getStuck M[Q <- z]"
+            then obtain S where sS0: "stuck S" and sS: "M[Q <- z] \<rightarrow>* S" unfolding getStuck_def by auto
+            have eq: "n = S" using beta_star_normal_unique[OF sn nums_are_normal[OF nn] sS stucks_are_normal[OF sS0]] .
+            have "val n" using nn val.intros(2) by blast
+            then have "val S" unfolding eq .
+            then show False using sS0 stuck_not_val by blast
+          qed
+        qed
       next
         case C
         then have "diverge M[Q <- z]" 
@@ -4649,29 +4796,59 @@ next
       then show ?thesis
       proof cases
         case B2
-        then obtain W where M2W: "M[Q <- z] \<rightarrow>* W" and "b5_prop (term.Pair V1 V2) W Q N z" by auto
-        then obtain W1 W2 where "W = Pair W1[Q <- z] W2[Q <- z]" and "W1[N <- z] = V1" and "W2[N <- z] = V2"
-          unfolding b5_prop_def
-          sorry
-        then have "W1[N <- z] \<in> \<lblot>A1\<rblot>" and "W2[N <- z] \<in> \<lblot>A2\<rblot>"
-          using \<open>V1 \<in> \<lblot>A1\<rblot>\<close> \<open>V2 \<in> \<lblot>A2\<rblot>\<close> by auto
-        then have "W1[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A1\<rblot>" and "W2[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" 
-          unfolding bottom_semantics.simps tau_semantics.simps 
-          using beta_star_def betas.refl sorry
-        then have "W1[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A1\<rblot>" and "W2[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" 
+        then obtain W where M2W: "M[Q <- z] \<rightarrow>* W" and bpW: "b5_prop (term.Pair V1 V2) W Q N z" by auto
+        have vv12: "val V1 \<and> val V2"
+          using \<open>val (Pair V1 V2)\<close> by (cases rule: val.cases) (auto elim: num.cases)
+        have vV1: "val V1" and vV2: "val V2" using vv12 by auto
+        from bpW obtain W1 W2 where wW: "W = Pair W1[Q <- z] W2[Q <- z]"
+          and w1: "W1[N <- z] = V1" and w2: "W2[N <- z] = V2"
+          unfolding b5_prop_def by blast
+        have iA1: "W1[N <- z] \<in> \<lblot>A1\<rblot>" and iA2: "W2[N <- z] \<in> \<lblot>A2\<rblot>"
+          using \<open>V1 \<in> \<lblot>A1\<rblot>\<close> \<open>V2 \<in> \<lblot>A2\<rblot>\<close> w1 w2 by auto
+        have vW1N: "val W1[N <- z]" and vW2N: "val W2[N <- z]" using vV1 vV2 w1 w2 by auto
+        have "W1[N <- z] \<in> \<T>\<lblot>A1\<rblot>" using iA1 vW1N unfolding tau_semantics.simps
+          by (auto simp: beta_star_def intro!: betas.refl)
+        then have TbN1: "W1[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A1\<rblot>" unfolding bottom_semantics.simps by simp
+        have "W2[N <- z] \<in> \<T>\<lblot>A2\<rblot>" using iA2 vW2N unfolding tau_semantics.simps
+          by (auto simp: beta_star_def intro!: betas.refl)
+        then have TbN2: "W2[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" unfolding bottom_semantics.simps by simp
+        from TbN1 TbN2 have TbA1: "W1[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A1\<rblot>" and TbA2: "W2[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>"
           using Prod.IH(1)[of W1] Prod.IH(3)[of W2] by auto
-        then consider (a) "diverge W1[Q <- z] \<or> diverge W2[Q <- z]" | (b) "W1[Q <- z] \<in> \<T>\<lblot>A1\<rblot> \<and> W2[Q <- z] \<in> \<T>\<lblot>A2\<rblot>"
+        from TbA1 TbA2 consider (a) "diverge W1[Q <- z] \<or> diverge W2[Q <- z]"
+          | (b) "W1[Q <- z] \<in> \<T>\<lblot>A1\<rblot> \<and> W2[Q <- z] \<in> \<T>\<lblot>A2\<rblot>"
           unfolding bottom_semantics.simps by auto
         then show ?thesis
         proof cases
           case a
-          then have "diverge W"
-            using \<open>W = Pair W1[Q <- z] W2[Q <- z]\<close> sorry
+          have "diverge W"
+          proof (cases "diverge W1[Q <- z]")
+            case True
+            then show ?thesis unfolding wW by (rule Pair_div)
+          next
+            case False
+            then have "W1[Q <- z] \<in> \<T>\<lblot>A1\<rblot>" using TbA1 unfolding bottom_semantics.simps by simp
+            then obtain U1 where sU1: "W1[Q <- z] \<rightarrow>* U1" and vU1: "val U1"
+              unfolding tau_semantics.simps by auto
+            have dW2: "diverge W2[Q <- z]" using a False by simp
+            have reflW2: "W2[Q <- z] \<rightarrow>* W2[Q <- z]" using beta_star_def betas.refl by blast
+            have "Pair W1[Q <- z] W2[Q <- z] \<rightarrow>* Pair U1 W2[Q <- z]"
+              by (rule Pair_beta_star[OF sU1 reflW2 vU1])
+            moreover have "diverge (Pair U1 W2[Q <- z])" by (rule Pair_div2[OF vU1 dW2])
+            ultimately show ?thesis unfolding wW using beta_star_diverge_back by blast
+          qed
           then show ?thesis using beta_star_diverge_back M2W by auto
         next
           case b
-          then have "W \<in> \<T>\<lblot>Prod A1 A2\<rblot>" unfolding tau_semantics.simps type_semantics.simps
-            sorry
+          then have TA1: "W1[Q <- z] \<in> \<T>\<lblot>A1\<rblot>" and TA2: "W2[Q <- z] \<in> \<T>\<lblot>A2\<rblot>" by auto
+          from TA1 obtain U1 where sU1: "W1[Q <- z] \<rightarrow>* U1" and vU1: "val U1" and iU1: "U1 \<in> \<lblot>A1\<rblot>"
+            unfolding tau_semantics.simps by auto
+          from TA2 obtain U2 where sU2: "W2[Q <- z] \<rightarrow>* U2" and vU2: "val U2" and iU2: "U2 \<in> \<lblot>A2\<rblot>"
+            unfolding tau_semantics.simps by auto
+          have "W \<rightarrow>* Pair U1 U2" unfolding wW by (rule Pair_beta_star[OF sU1 sU2 vU1])
+          moreover have "val (Pair U1 U2)" using vU1 vU2 val.intros(3) by blast
+          moreover have "Pair U1 U2 \<in> \<lblot>Prod A1 A2\<rblot>"
+            unfolding type_semantics.simps using iU1 iU2 by (auto intro!: image_eqI[of _ _ "(U1, U2)"])
+          ultimately have "W \<in> \<T>\<lblot>Prod A1 A2\<rblot>" unfolding tau_semantics.simps by blast
           then have "M[Q <- z] \<in> \<T>\<lblot>Prod A1 A2\<rblot>" unfolding tau_semantics.simps
             using M2W beta_star_sums by blast
           then show ?thesis unfolding bottom_semantics.simps by auto
@@ -4680,7 +4857,112 @@ next
     qed
   next
     case 2
-    then show ?case sorry
+    then have notT: "M[N <- z] \<notin> \<T>\<lblot>Prod A1 A2\<rblot>" by simp
+    consider (A) "\<exists>V. M[N <- z] \<rightarrow>* V \<and> val V" | (B) "getStuck M[N <- z]" | (C) "diverge M[N <- z]"
+    proof -
+      have "diverge M[N <- z] \<or> normalizes M[N <- z]" by (rule diverge_or_normalizes)
+      then show thesis
+      proof
+        assume "diverge M[N <- z]" then show thesis by (rule that(3))
+      next
+        assume "normalizes M[N <- z]"
+        then obtain Nf where nf: "normal Nf" and st: "M[N <- z] \<rightarrow>* Nf"
+          unfolding normalizes_def by auto
+        have "val Nf \<or> stuck Nf" using val_stuck_step[of Nf] nf unfolding normal_def by auto
+        then show thesis
+        proof
+          assume "val Nf" then show thesis using st by (intro that(1)) auto
+        next
+          assume "stuck Nf" then show thesis using st by (intro that(2)) (auto simp: getStuck_def)
+        qed
+      qed
+    qed
+    then show ?case
+    proof cases
+      case C
+      then have "diverge M[Q <- z]" using ls less_defined_diverge_subst by auto
+      then show ?thesis unfolding tau_semantics.simps
+        using diverge_xor_normalizes vals_are_normal normalizes_def by auto
+    next
+      case B
+      then have disj: "diverge M[Q <- z] \<or> getStuck M[Q <- z]"
+        using ls nzN b6[of M N z Q] by auto
+      show ?thesis
+      proof
+        assume "M[Q <- z] \<in> \<T>\<lblot>Prod A1 A2\<rblot>"
+        then obtain W where vW: "val W" and sW: "M[Q <- z] \<rightarrow>* W"
+          unfolding tau_semantics.simps by auto
+        from disj show False
+        proof
+          assume "diverge M[Q <- z]"
+          then show False using sW vals_are_normal[OF vW] diverge_xor_normalizes normalizes_def by blast
+        next
+          assume "getStuck M[Q <- z]"
+          then obtain S where sS0: "stuck S" and sS: "M[Q <- z] \<rightarrow>* S" unfolding getStuck_def by auto
+          have "W = S" using beta_star_normal_unique[OF sW vals_are_normal[OF vW] sS stucks_are_normal[OF sS0]] .
+          then show False using vW sS0 stuck_not_val by blast
+        qed
+      qed
+    next
+      case A
+      then obtain V where sV: "M[N <- z] \<rightarrow>* V" and vV: "val V" by auto
+      have nVP: "V \<notin> \<lblot>Prod A1 A2\<rblot>" using notT sV vV unfolding tau_semantics.simps by auto
+      have "diverge M[Q <- z] \<or> (\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z)"
+        using b5[of V z N M Q] vV nzN sV ls by simp
+      then show ?thesis
+      proof
+        assume "diverge M[Q <- z]"
+        then show ?thesis unfolding tau_semantics.simps
+          using diverge_xor_normalizes vals_are_normal normalizes_def by auto
+      next
+        assume "\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z"
+        then obtain W where vW: "val W" and sW: "M[Q <- z] \<rightarrow>* W" and bp: "b5_prop V W Q N z" by auto
+        have wNP: "W \<notin> \<lblot>Prod A1 A2\<rblot>"
+        proof (cases "\<exists>V1 V2. V = Pair V1 V2")
+          case False
+          then have "\<nexists>W1 W2. W = Pair W1 W2"
+            using b5_prop_not_pair[OF vV _ bp] by auto
+          then show ?thesis unfolding type_semantics.simps by auto
+        next
+          case True
+          then obtain V1 V2 where vEq: "V = Pair V1 V2" by auto
+          have vv: "val V1 \<and> val V2"
+            using vV vEq by (cases rule: val.cases) (auto elim: num.cases)
+          then have vV1: "val V1" and vV2: "val V2" by auto
+          obtain W1 W2 where wW: "W = Pair W1[Q <- z] W2[Q <- z]"
+            and w1: "W1[N <- z] = V1" and w2: "W2[N <- z] = V2"
+            using bp vEq unfolding b5_prop_def by blast
+          have vw: "val W1[Q <- z] \<and> val W2[Q <- z]"
+            using vW wW by (cases rule: val.cases) (auto elim: num.cases)
+          then have vW1: "val W1[Q <- z]" and vW2: "val W2[Q <- z]" by auto
+          from nVP vEq have "V1 \<notin> \<lblot>A1\<rblot> \<or> V2 \<notin> \<lblot>A2\<rblot>"
+            unfolding type_semantics.simps by auto
+          then have "W1[Q <- z] \<notin> \<lblot>A1\<rblot> \<or> W2[Q <- z] \<notin> \<lblot>A2\<rblot>"
+          proof
+            assume "V1 \<notin> \<lblot>A1\<rblot>"
+            then have "W1[N <- z] \<notin> \<T>\<lblot>A1\<rblot>" using w1 vV1 val_tau_iff by auto
+            then have "W1[Q <- z] \<notin> \<T>\<lblot>A1\<rblot>" using Prod.IH(2)[of W1] by auto
+            then have "W1[Q <- z] \<notin> \<lblot>A1\<rblot>" using vW1 val_tau_iff by auto
+            then show ?thesis by simp
+          next
+            assume "V2 \<notin> \<lblot>A2\<rblot>"
+            then have "W2[N <- z] \<notin> \<T>\<lblot>A2\<rblot>" using w2 vV2 val_tau_iff by auto
+            then have "W2[Q <- z] \<notin> \<T>\<lblot>A2\<rblot>" using Prod.IH(4)[of W2] by auto
+            then have "W2[Q <- z] \<notin> \<lblot>A2\<rblot>" using vW2 val_tau_iff by auto
+            then show ?thesis by simp
+          qed
+          then show ?thesis unfolding wW type_semantics.simps by auto
+        qed
+        show ?thesis
+        proof
+          assume "M[Q <- z] \<in> \<T>\<lblot>Prod A1 A2\<rblot>"
+          then obtain P where vP: "val P" and sP: "M[Q <- z] \<rightarrow>* P" and iP: "P \<in> \<lblot>Prod A1 A2\<rblot>"
+            unfolding tau_semantics.simps by auto
+          have "W = P" using beta_star_normal_unique[OF sW vals_are_normal[OF vW] sP vals_are_normal[OF vP]] .
+          then show False using wNP iP by simp
+        qed
+      qed
+    qed
   }
 next
   case (To A1 A2)
@@ -4704,10 +4986,82 @@ next
   case Ok
   {
     case 1
-    then show ?case sorry
+    then consider (A) "diverge M[N <- z]" | (B) "\<exists>V. M[N <- z] \<rightarrow>* V \<and> val V"
+      unfolding bottom_semantics.simps tau_semantics.simps type_semantics.simps
+      by (auto simp: Vals0_def)
+    then show ?case
+    proof cases
+      case A
+      then have "diverge M[Q <- z]" using ls less_defined_diverge_subst by auto
+      then show ?thesis unfolding bottom_semantics.simps by simp
+    next
+      case B
+      then obtain V where sV: "M[N <- z] \<rightarrow>* V" and vV: "val V" by auto
+      have "diverge M[Q <- z] \<or> (\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z)"
+        using b5[of V z N M Q] vV nzN sV ls by simp
+      then show ?thesis
+      proof
+        assume "diverge M[Q <- z]"
+        then show ?thesis unfolding bottom_semantics.simps by simp
+      next
+        assume "\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z"
+        then obtain W where "val W" and "M[Q <- z] \<rightarrow>* W" by auto
+        then show ?thesis unfolding bottom_semantics.simps tau_semantics.simps type_semantics.simps
+          by (auto simp: Vals0_def)
+      qed
+    qed
   next
     case 2
-    then show ?case sorry
+    then have notT: "M[N <- z] \<notin> \<T>\<lblot>Ok\<rblot>" by simp
+    consider (B) "getStuck M[N <- z]" | (C) "diverge M[N <- z]"
+    proof -
+      have "diverge M[N <- z] \<or> normalizes M[N <- z]" by (rule diverge_or_normalizes)
+      then show thesis
+      proof
+        assume "diverge M[N <- z]" then show thesis by (rule that(2))
+      next
+        assume "normalizes M[N <- z]"
+        then obtain Nf where nf: "normal Nf" and st: "M[N <- z] \<rightarrow>* Nf"
+          unfolding normalizes_def by auto
+        have "val Nf \<or> stuck Nf" using val_stuck_step[of Nf] nf unfolding normal_def by auto
+        then show thesis
+        proof
+          assume "val Nf"
+          then have "M[N <- z] \<in> \<T>\<lblot>Ok\<rblot>" using st
+            unfolding tau_semantics.simps type_semantics.simps by (auto simp: Vals0_def)
+          then show thesis using notT by simp
+        next
+          assume "stuck Nf" then show thesis using st by (intro that(1)) (auto simp: getStuck_def)
+        qed
+      qed
+    qed
+    then show ?case
+    proof cases
+      case B
+      then have disj: "diverge M[Q <- z] \<or> getStuck M[Q <- z]"
+        using ls nzN b6[of M N z Q] by auto
+      show ?thesis
+      proof
+        assume "M[Q <- z] \<in> \<T>\<lblot>Ok\<rblot>"
+        then obtain W where vW: "val W" and sW: "M[Q <- z] \<rightarrow>* W"
+          unfolding tau_semantics.simps type_semantics.simps by (auto simp: Vals0_def)
+        from disj show False
+        proof
+          assume "diverge M[Q <- z]"
+          then show False using sW vals_are_normal[OF vW] diverge_xor_normalizes normalizes_def by blast
+        next
+          assume "getStuck M[Q <- z]"
+          then obtain S where sS0: "stuck S" and sS: "M[Q <- z] \<rightarrow>* S" unfolding getStuck_def by auto
+          have "W = S" using beta_star_normal_unique[OF sW vals_are_normal[OF vW] sS stucks_are_normal[OF sS0]] .
+          then show False using vW sS0 stuck_not_val by blast
+        qed
+      qed
+    next
+      case C
+      then have "diverge M[Q <- z]" using ls less_defined_diverge_subst by auto
+      then show ?thesis unfolding tau_semantics.simps type_semantics.simps
+        using diverge_xor_normalizes vals_are_normal normalizes_def by (auto simp: Vals0_def)
+    qed
   }
 qed
 
