@@ -1510,16 +1510,31 @@ inductive disjunction :: "type \<Rightarrow> type \<Rightarrow> bool" (infix "||
 
 notation finsert (infixr ";" 50)
 
+text \<open>Free variables of a context (an fset of typings): the union of the free variables of the
+  term components, i.e.\ \<open>\<Union> (FVars ` fst ` fset \<Gamma>)\<close>. This is exactly the support that the
+  \<open>binder_inductive\<close> refreshability obligation for the \<open>judgement\<close> relation (defined below) computes
+  for its \<open>'a typing fset\<close> arguments.\<close>
+definition FVarsC :: "('v::var) typing fset \<Rightarrow> 'v set" where
+  "FVarsC G = \<Union> (FVars ` fst ` fset G)"
+
+lemma FVarsC_simps[simp]:
+  "FVarsC {||} = {}"
+  "FVarsC (finsert (t, ty) G) = FVars t \<union> FVarsC G"
+  by (auto simp: FVarsC_def)
+
+lemma FVarsC_raw: "\<Union> (FVars ` fst ` fset G) = FVarsC G"
+  by (simp add: FVarsC_def)
+
 inductive judgement :: "'var::var typing fset \<Rightarrow> 'var::var typing fset \<Rightarrow> bool" (infix "\<turnstile>" 10) where
   Id : "(Var x :. A) ; \<Gamma> \<turnstile> (Var x :. A) ; \<Delta>"
 | ZeroR : "\<Gamma> \<turnstile> (Zero :. Nat) ; \<Delta>"
 | SuccR: "\<Gamma> \<turnstile> (M :. Nat) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (Succ M :. Nat) ; \<Delta>"
 | PredR: "\<Gamma> \<turnstile> (M :. Nat) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (Pred M :. Nat) ; \<Delta>"
-| FixsR: "(Var f :. To A B) ; (Var x :. A) ; \<Gamma> \<turnstile> (M :. B) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (Fix f x M :. To A B) ; \<Delta>"
-| FixnR: "(Var f :. OnlyTo A B) ; (M :. B) ; \<Gamma> \<turnstile> (Var x :. A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (Fix f x M :. OnlyTo A B) ; \<Delta>"
+| FixsR: "(Var f :. To A B) ; (Var x :. A) ; \<Gamma> \<turnstile> (M :. B) ; \<Delta> \<Longrightarrow> {f, x} \<inter> (FVarsC \<Gamma> \<union> FVarsC \<Delta>) = {} \<Longrightarrow> \<Gamma> \<turnstile> (Fix f x M :. To A B) ; \<Delta>"
+| FixnR: "(Var f :. OnlyTo A B) ; (M :. B) ; \<Gamma> \<turnstile> (Var x :. A) ; \<Delta> \<Longrightarrow> {f, x} \<inter> (FVarsC \<Gamma> \<union> FVarsC \<Delta>) = {} \<Longrightarrow> \<Gamma> \<turnstile> (Fix f x M :. OnlyTo A B) ; \<Delta>"
 | AppR: "(M :. To B A) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (N :. B) ; \<Delta> \<Longrightarrow>  \<Gamma>  \<turnstile> (App M N :. A) ; \<Delta>"
 | PairR: "\<Gamma> \<turnstile> (M :. A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (N :. B) ; \<Delta> \<Longrightarrow>  \<Gamma>  \<turnstile> (Pair M N :. Prod A B) ; \<Delta>"
-| LetR: "(M :. Prod B C) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Var (dfst x) :. B) ; (Var (dsnd x) :. C) ; \<Gamma> \<turnstile> (N :. A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (Let x M N :. A) ; \<Delta>"
+| LetR: "(M :. Prod B C) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Var (dfst x) :. B) ; (Var (dsnd x) :. C) ; \<Gamma> \<turnstile> (N :. A) ; \<Delta> \<Longrightarrow> dset x \<inter> (FVarsC \<Gamma> \<union> FVarsC \<Delta> \<union> FVars M) = {} \<Longrightarrow> \<Gamma> \<turnstile> (Let x M N :. A) ; \<Delta>"
 | IfzR: "\<Gamma> \<turnstile> (M :. Nat) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (P :. A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (N :. A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (If M N P :. A) ; \<Delta>"
 | Dis: "A || B \<Longrightarrow> \<Gamma> \<turnstile> (M :. B) ; \<Delta> \<Longrightarrow> (M :. A); \<Gamma> \<turnstile> \<Delta>"
 | PairL1: "(M :. A) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Pair M N :. Prod A B) ; \<Gamma> \<turnstile> \<Delta>"
@@ -1528,9 +1543,9 @@ inductive judgement :: "'var::var typing fset \<Rightarrow> 'var::var typing fse
 | PredL: "(M :. Nat) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Pred M :. Nat) ; \<Gamma> \<turnstile> \<Delta>"
 | IfzL1: "(M :. Nat) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (If M N P :. A) ; \<Gamma> \<turnstile> \<Delta>"
 | IfzL2: "(N :. A) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (P :. A) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (If M N P :. A) ; \<Gamma> \<turnstile> \<Delta>"
-| LetL1: "(N :. A) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Let x M N :. A) ; \<Gamma> \<turnstile> \<Delta>"
-| LetL2_1: "(M :. Prod B1 B2) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (N :. A) ; \<Gamma> \<turnstile> (Var (dfst x) :. B1) ; \<Delta> \<Longrightarrow> (Let x M N :. A) ; \<Gamma> \<turnstile> \<Delta>"
-| LetL2_2: "(M :. Prod B1 B2) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (N :. A) ; \<Gamma> \<turnstile> (Var (dsnd x) :. B1) ; \<Delta> \<Longrightarrow> (Let x M N :. A) ; \<Gamma> \<turnstile> \<Delta>"
+| LetL1: "(N :. A) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> dset x \<inter> (FVars M \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>) = {} \<Longrightarrow> (Let x M N :. A) ; \<Gamma> \<turnstile> \<Delta>"
+| LetL2_1: "(M :. Prod B1 B2) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (N :. A) ; \<Gamma> \<turnstile> (Var (dfst x) :. B1) ; \<Delta> \<Longrightarrow> dset x \<inter> (FVars M \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>) = {} \<Longrightarrow> (Let x M N :. A) ; \<Gamma> \<turnstile> \<Delta>"
+| LetL2_2: "(M :. Prod B1 B2) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (N :. A) ; \<Gamma> \<turnstile> (Var (dsnd x) :. B1) ; \<Delta> \<Longrightarrow> dset x \<inter> (FVars M \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>) = {} \<Longrightarrow> (Let x M N :. A) ; \<Gamma> \<turnstile> \<Delta>"
 | OkVarR: "\<Gamma> \<turnstile> (Var x :. Ok) ; \<Delta>"
 | OkL: "(M :. Ok) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (M :. A) ; \<Gamma> \<turnstile> \<Delta>"
 | OkR: "\<Gamma> \<turnstile> (M :. A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile> (M :. Ok) ; \<Delta>"
@@ -1540,24 +1555,6 @@ inductive judgement :: "'var::var typing fset \<Rightarrow> 'var::var typing fse
 | OkPL: "(M :. Nat) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Pred M :. Ok) ; \<Gamma> \<turnstile> \<Delta>"
 | OkPrL_1: "(M1 :. Ok) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Pair M1 M2 :. Ok) ; \<Gamma> \<turnstile> \<Delta>"
 | OkPrL_2: "(M2 :. Ok) ; \<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (Pair M1 M2 :. Ok) ; \<Gamma> \<turnstile> \<Delta>"
-
-text \<open>CAVEAT (2026-07-07): with the ORIGINAL binder_datatypes library, the equivariance
-  obligation generated below is FALSE as stated: the permutation action synthesized for the
-  @{typ "'a typing set"} arguments is @{term id} (the MRBNF walk does not reach through
-  @{type set}/@{type prod}, since @{typ "'a set"} is not a BNF), so the obligation demands the
-  rule disjunction re-hold with @{term "\<sigma> ` B"} but UNCHANGED @{term x1}/@{term x2} —
-  unprovable for the Fix/Let disjuncts (take @{term "B = {f,x}"} with @{term "f \<in> FVars M"} and
-  \<sigma> swapping f with a free variable of M: no alpha-witness exists). The refresh obligation, by
-  contrast, is trivially provable since the computed support of the arguments is empty.
-
-  RESOLVED at the library level (commit 2322966 on branch fixes-for-two-sided-typing,
-  build-verified): binder_inductive now synthesizes the true action
-  @{term "image (map_prod (permute_term \<sigma>) id)"} and the support
-  \<open>\<Union>{FVars (fst e) | e \<in> \<Gamma>}\<close> for such set-typed arguments, so the generated obligations are the
-  meaningful ones. Once this session runs against the rebuilt heap, the sorry below should be
-  replaced by a genuine equivariance proof (rule induction under the image action, analogous to
-  @{text beta_equiv_ob}); until then the currently loaded (pre-fix) heap still shows the old
-  id-action obligation, so we keep the sorry.\<close>
 
 lemmas [equiv] = term.permute map_prod_simp
 
@@ -1576,12 +1573,20 @@ proof -
   have "(map_prod (permute_term (inv f)) id \<circ> map_prod (permute_term f) id) x = id x"
     for x :: "'a typing"
     by (cases x)
-       (simp add: map_prod_simp
-          term.permute_comp[OF assms bij_imp_bij_inv[OF assms(1)] supp_inv_bound[OF assms]]
+       (simp add: term.permute_comp[OF assms bij_imp_bij_inv[OF assms(1)] supp_inv_bound[OF assms]]
           inv_o_simp1[OF assms(1)] term.permute_id)
   then have "map_prod (permute_term (inv f)) id \<circ> map_prod (permute_term f) id = id" by auto
   then show ?thesis by (metis fset.map_comp fset.map_id)
 qed
+
+text \<open>Composed-image variant of @{thm fimage_map_prod_cancel}: during the equivariance proof the
+  two @{const fimage}s get fused by @{thm fset.map_comp} into a single \<open>(g \<circ> h) |`| G\<close>, which
+  no longer matches the nested form, so we need this shape too.\<close>
+lemma fimage_map_prod_o_cancel[equiv]:
+  fixes f :: "'a::var \<Rightarrow> 'a"
+  assumes "bij f" "|supp f| <o |UNIV::'a set|"
+  shows "(map_prod (permute_term (inv f)) id \<circ> map_prod (permute_term f) id) |`| G = G"
+  by (metis fimage_map_prod_cancel[OF assms] fset.map_comp)
 
 lemma permute_term_inv_cancel[equiv]:
   fixes f :: "'a::var \<Rightarrow> 'a"
@@ -1592,19 +1597,225 @@ lemma permute_term_inv_cancel[equiv]:
 
 lemmas [equiv] = dfst_dmap dsnd_dmap
 
-binder_inductive judgement
-  sorry
+text \<open>Equivariance of the context free-variable operator, needed so that the automatic
+  equivariance proof can discharge the freshness side conditions of the binding rules.\<close>
+lemma FVarsC_permute[equiv]:
+  fixes \<sigma> :: "'v::var \<Rightarrow> 'v"
+  assumes "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'v set|"
+  shows "FVarsC (map_prod (permute_term \<sigma>) id |`| \<Gamma>) = \<sigma> ` FVarsC \<Gamma>"
+  unfolding FVarsC_def
+  by (auto simp: term.FVars_permute[OF assms] image_image map_prod_def split_beta image_UN)
 
-thm judgement.strong_induct
+text \<open>Refreshability holds trivially with @{term "B' = B"}: the freshness side conditions on the
+  binding rules (@{text FixsR}, @{text FixnR}, @{text LetR}, @{text LetL1}, @{text LetL2_1},
+  @{text LetL2_2}) state exactly that the bound variables avoid the free variables of the ambient
+  context, i.e.\ that @{term B} is already disjoint from the support the obligation computes. For the
+  non-binding rules @{term "B = {}"}. Equivariance is discharged automatically via the @{text equiv}
+  simp set.\<close>
+binder_inductive (no_auto_equiv) judgement
+  subgoal premises prems for R B \<sigma> x1 x2 \<comment> \<open>equivariance\<close>
+    supply SET = prems(1,2) term.permute[OF prems(1,2)]
+        term.permute[OF bij_imp_bij_inv[OF prems(1)] supp_inv_bound[OF prems(1,2)]]
+        term.FVars_permute[OF prems(1,2)] FVarsC_permute[OF prems(1,2)]
+        finsert_map_prod_equiv[OF prems(1,2)] fimage_map_prod_cancel[OF prems(1,2)]
+        fimage_map_prod_o_cancel[OF prems(1,2)]
+        permute_term_inv_cancel[OF prems(1,2)] dpair.set_map[OF prems(1)]
+        dfst_dmap[OF prems(1)] dsnd_dmap[OF prems(1)]
+        inj_image_mem_iff[OF bij_is_inj[OF prems(1)]] inj_eq[OF bij_is_inj[OF prems(1)]]
+        image_Int[OF bij_is_inj[OF prems(1)], symmetric] inv_f_f[OF bij_is_inj[OF prems(1)]]
+    unfolding Tperm2_judgement_def Tperm1_judgement_def
+    \<comment> \<open>Insert the rule disjunction as a goal premise, then split it incrementally with
+      @{method erule}~@{text disjE}, proving each rule case before splitting off the next. This keeps
+      the (huge) transported goal in at most two subgoals at a time, avoiding the blow-up of a single
+      @{method elim} into 29 copies. (@{method erule} needs the disjunction among the goal premises,
+      not merely chained, hence the @{method insert} rather than \<open>using\<close>.)\<close>
+    apply (insert prems(3))
+    apply (erule disjE) subgoal \<comment> \<open>Id\<close>
+      apply (elim exE conjE) subgoal for x A \<Gamma> \<Delta>
+        by (rule disjI1, rule exI[of _ "\<sigma> x"], rule exI[of _ A],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>ZeroR\<close>
+      apply (elim exE conjE) subgoal for \<Gamma> \<Delta>
+        by (rule disjI2, rule disjI1, rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>SuccR\<close>
+      apply (elim exE conjE) subgoal for \<Gamma> M \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "permute_term \<sigma> M"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>PredR\<close>
+      apply (elim exE conjE) subgoal for \<Gamma> M \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "permute_term \<sigma> M"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>FixsR\<close>
+      apply (elim exE conjE) subgoal for f A Ba x \<Gamma> M \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "\<sigma> f"], rule exI[of _ A], rule exI[of _ Ba], rule exI[of _ "\<sigma> x"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "permute_term \<sigma> M"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>FixnR\<close>
+      apply (elim exE conjE) subgoal for f A Ba M \<Gamma> x \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "\<sigma> f"], rule exI[of _ A], rule exI[of _ Ba], rule exI[of _ "permute_term \<sigma> M"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "\<sigma> x"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>AppR\<close>
+      apply (elim exE conjE) subgoal for M Ba A \<Gamma> \<Delta> N
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ Ba], rule exI[of _ A],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"],
+            rule exI[of _ "permute_term \<sigma> N"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>PairR\<close>
+      apply (elim exE conjE) subgoal for \<Gamma> M A \<Delta> N Ba
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ A],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ Ba]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>LetR\<close>
+      apply (elim exE conjE) subgoal for M Ba C \<Gamma> \<Delta> x N A
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ Ba], rule exI[of _ C],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"],
+            rule exI[of _ "dmap \<sigma> x"], rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ A]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>IfzR\<close>
+      apply (elim exE conjE) subgoal for \<Gamma> M \<Delta> P A N
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "permute_term \<sigma> M"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> P"], rule exI[of _ A],
+            rule exI[of _ "permute_term \<sigma> N"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>Dis\<close>
+      apply (elim exE conjE) subgoal for A Ba \<Gamma> M \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ A], rule exI[of _ Ba], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>PairL1\<close>
+      apply (elim exE conjE) subgoal for M A \<Gamma> \<Delta> N Ba
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ A], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ Ba]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>AppL\<close>
+      apply (elim exE conjE) subgoal for M Ba A \<Gamma> \<Delta> N
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ Ba], rule exI[of _ A], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> N"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>SuccL\<close>
+      apply (elim exE conjE) subgoal for M \<Gamma> \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>PredL\<close>
+      apply (elim exE conjE) subgoal for M \<Gamma> \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>IfzL1\<close>
+      apply (elim exE conjE) subgoal for M \<Gamma> \<Delta> N P A
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> N"],
+            rule exI[of _ "permute_term \<sigma> P"], rule exI[of _ A]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>IfzL2\<close>
+      apply (elim exE conjE) subgoal for N A \<Gamma> \<Delta> P M
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ A], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> P"],
+            rule exI[of _ "permute_term \<sigma> M"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>LetL1\<close>
+      apply (elim exE conjE) subgoal for N A \<Gamma> \<Delta> x M
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ A],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"],
+            rule exI[of _ "dmap \<sigma> x"], rule exI[of _ "permute_term \<sigma> M"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>LetL2_1\<close>
+      apply (elim exE conjE) subgoal for M B1 B2 \<Gamma> \<Delta> N A x
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ B1], rule exI[of _ B2],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"],
+            rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ A], rule exI[of _ "dmap \<sigma> x"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>LetL2_2\<close>
+      apply (elim exE conjE) subgoal for M B1 B2 \<Gamma> \<Delta> N A x
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ B1], rule exI[of _ B2],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"],
+            rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ A], rule exI[of _ "dmap \<sigma> x"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>OkVarR\<close>
+      apply (elim exE conjE) subgoal for \<Gamma> x \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "\<sigma> x"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>OkL\<close>
+      apply (elim exE conjE) subgoal for M \<Gamma> \<Delta> A
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ A]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>OkR\<close>
+      apply (elim exE conjE) subgoal for \<Gamma> M A \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"], rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ A],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>OkApL1\<close>
+      apply (elim exE conjE) subgoal for M A \<Gamma> \<Delta> N
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ A], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> N"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>OkApL2\<close>
+      apply (elim exE conjE) subgoal for N \<Gamma> \<Delta> M
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> N"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> M"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>OkSL\<close>
+      apply (elim exE conjE) subgoal for M \<Gamma> \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>OkPL\<close>
+      apply (elim exE conjE) subgoal for M \<Gamma> \<Delta>
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"]) (auto simp: SET) done
+    apply (erule disjE) subgoal \<comment> \<open>OkPrL_1\<close>
+      apply (elim exE conjE) subgoal for M1 \<Gamma> \<Delta> M2
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI1,
+            rule exI[of _ "permute_term \<sigma> M1"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> M2"]) (auto simp: SET) done
+    subgoal \<comment> \<open>OkPrL_2\<close>
+      apply (elim exE conjE) subgoal for M2 \<Gamma> \<Delta> M1
+        by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2,
+            rule exI[of _ "permute_term \<sigma> M2"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
+            rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> M1"]) (auto simp: SET) done
+    done
+  subgoal premises prems for R B x1 x2 \<comment> \<open>refreshability\<close>
+    apply (rule exI[of _ B])
+    apply (rule conjI)
+    subgoal
+      using prems(3) by (elim disjE exE conjE) (auto simp: FVarsC_def)
+    subgoal
+      by (rule prems(3))
+    done
+  done
+
+thm judgement.strong_induct judgement.equiv
 
 lemma weakenL: "\<Gamma> \<turnstile> \<Delta> \<Longrightarrow> (M :. A) ; \<Gamma> \<turnstile> \<Delta>"
-  apply (induction \<Gamma> \<Delta> rule:judgement.induct)
-  apply (auto intro: judgement.intros simp add: finsert_commute[of "M :. A" _])
+  apply (binder_induction \<Gamma> \<Delta> avoiding: M rule: judgement.strong_induct)
+  apply (auto intro: judgement.intros simp add: finsert_commute[of "M :. A" _] FVarsC_def Int_Un_distrib)
+  \<comment> \<open>the four @{const Let} cases: @{method auto} does not pick the right rule among the 29 intros,
+    so apply it explicitly (premises are already in the induction hypotheses; the freshness of the
+    binder w.r.t. the extra @{term M} comes from @{text avoiding})\<close>
+  subgoal by (rule judgement.LetR) (auto simp: FVarsC_def Int_Un_distrib)
+  subgoal by (rule judgement.LetL1) (auto simp: FVarsC_def Int_Un_distrib)
+  subgoal by (rule judgement.LetL2_1) (auto simp: FVarsC_def Int_Un_distrib)
+  subgoal by (rule judgement.LetL2_2) (auto simp: FVarsC_def Int_Un_distrib)
   done
 
 lemma weakenR: "\<Gamma> \<turnstile> \<Delta> \<Longrightarrow> \<Gamma>  \<turnstile> (M :. A) ; \<Delta>"
-  apply (induction \<Gamma> \<Delta> rule:judgement.induct)
-  apply (auto intro: judgement.intros simp add: finsert_commute[of "M :. A" _])
+  apply (binder_induction \<Gamma> \<Delta> avoiding: M rule: judgement.strong_induct)
+  apply (auto intro: judgement.intros simp add: finsert_commute[of "M :. A" _] FVarsC_def Int_Un_distrib)
+  subgoal by (rule judgement.LetR) (auto simp: FVarsC_def Int_Un_distrib)
+  subgoal by (rule judgement.LetL1) (auto simp: FVarsC_def Int_Un_distrib)
+  subgoal by (rule judgement.LetL2_1) (auto simp: FVarsC_def Int_Un_distrib)
+  subgoal by (rule judgement.LetL2_2) (auto simp: FVarsC_def Int_Un_distrib)
   done
 
 section \<open>Semantics\<close>
