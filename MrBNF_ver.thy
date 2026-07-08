@@ -1829,8 +1829,8 @@ fun
   "\<lblot>Ok\<rblot> = Vals0"
 | "\<lblot>Nat\<rblot> = {V. num V}"
 | "\<lblot>Prod A B\<rblot> = case_prod Pair ` (\<lblot>A\<rblot> \<times> \<lblot>B\<rblot>)"
-| "\<lblot>To A B\<rblot> = {Fix f x M | f x M. \<forall>V \<in> Vals0. V \<in> \<lblot>A\<rblot> \<longrightarrow> M[V <- x][Fix f x M <- f] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>}"
-| "\<lblot>OnlyTo A B\<rblot> = {Fix f x M | f x M. \<forall>V \<in> Vals0. M[V <- x][Fix f x M <- f] \<in> \<T>\<lblot>B\<rblot> \<longrightarrow> V \<in> \<lblot>A\<rblot>}"
+| "\<lblot>To A B\<rblot> = {Fix f x M | f x M. \<forall>V \<in> Vals0. FVars V = {} \<longrightarrow> V \<in> \<lblot>A\<rblot> \<longrightarrow> M[V <- x][Fix f x M <- f] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>}"
+| "\<lblot>OnlyTo A B\<rblot> = {Fix f x M | f x M. \<forall>V \<in> Vals0. FVars V = {} \<longrightarrow> M[V <- x][Fix f x M <- f] \<in> \<T>\<lblot>B\<rblot> \<longrightarrow> V \<in> \<lblot>A\<rblot>}"
 | "\<T>\<lblot>A\<rblot> = {M. \<exists>V \<in> \<lblot>A\<rblot>. M \<rightarrow>* V \<and> val V}"
 | "\<T>\<^sub>\<bottom>\<lblot>A\<rblot> = {M. M \<in> \<T>\<lblot>A\<rblot> \<or> (M \<Up>)}"
 
@@ -5363,7 +5363,7 @@ inductive safe :: "type \<Rightarrow> bool" where
 | "safe Ok"
 | "safe A \<Longrightarrow> safe B \<Longrightarrow> safe (Prod A B)"
 | "safe A \<Longrightarrow> safe B \<Longrightarrow> safe (To A B)"
-| "safe A \<Longrightarrow> finitely_verifiable F \<Longrightarrow> safe (OnlyTop A F)"
+| "safe A \<Longrightarrow> finitely_verifiable F \<Longrightarrow> safe (OnlyTo A F)"
 
 lemma diverge_xor_normalizes: "\<not> (normalizes M \<and> diverge M)"
 proof
@@ -5388,30 +5388,264 @@ proof(rule contrapos_pp[of "diverge Q" "diverge P"])
   then show "\<not> diverge Q" using diverge_xor_normalizes by auto
 qed
 
-lemma less_defined_diverge_subst: "Q \<lesssim> N \<Longrightarrow> diverge M[N <- z] \<Longrightarrow> diverge M[Q <- z]"
-proof(cases "blocked z M")
-  case True
-  assume ls: "Q \<lesssim> N" and Md: "diverge M[N <- z]"
-  obtain E hole where "M = E[Var z <- hole]" and "hole \<noteq> z" and niN: "hole \<notin> FVars N" and niQ: "hole \<notin> FVars Q" 
-    and ctx_subst: "\<forall>N. hole \<notin> FVars N \<longrightarrow> eval_ctx hole E[N <- z]"
-    using blocked_fresh_hole[of "FVars N \<union> FVars Q"] finite_FVars True by auto
-  then have "M[N <- z] = E[N <- z][N <- hole]" and "M[Q <- z] = E[Q <- z][Q <- hole]"
-    using usubst_usubst[of hole z N] usubst_usubst[of hole z Q]
-    by auto
-  also have "eval_ctx hole E[N <- z]" and "eval_ctx hole E[Q <- z]"
-    using niN niQ ctx_subst by auto
-  ultimately have "diverge M[Q <- z]"
-    using ls Md less_defined_diverge[of Q N] div_ctx sorry
-  then show ?thesis sorry
+text \<open>Infrastructure for @{text less_defined_diverge_subst}: bounded reduction lemmas and the
+  key one-step lemma @{text ldds_step} (well-founded on @{term "count_term z M"}: a term whose
+  @{text N}-substitution diverges either diverges under the @{text Q}-substitution or takes at least
+  one step to another such term; the measure drops when a blocked @{text z} at the evaluation
+  position is resolved to its value).\<close>
+
+lemma betas_prefix: "M \<rightarrow>[a] X \<Longrightarrow> M \<rightarrow>[b] Y \<Longrightarrow> a \<le> b \<Longrightarrow> X \<rightarrow>[b - a] Y"
+proof (induction a arbitrary: M b)
+  case 0
+  then have "X = M" by (auto elim: betas.cases)
+  then show ?case using 0 by simp
 next
-  case False
-  then show ?thesis sorry
+  case (Suc a)
+  from Suc.prems(1) obtain M1 where m1: "M \<rightarrow> M1" and r1: "M1 \<rightarrow>[a] X"
+    by (auto elim: betas.cases)
+  from Suc.prems(3) obtain b' where b': "b = Suc b'" using Suc_le_D by blast
+  from Suc.prems(2) b' obtain M2 where m2: "M \<rightarrow> M2" and r2: "M2 \<rightarrow>[b'] Y"
+    by (auto elim: betas.cases)
+  have "M1 = M2" using m1 m2 beta_deterministic by blast
+  then have "M1 \<rightarrow>[b'] Y" using r2 by simp
+  then have "X \<rightarrow>[b' - a] Y" using Suc.IH[OF r1] Suc.prems(3) b' by simp
+  then show ?case using b' by simp
 qed
+
+lemma diverge_reduces_k: "diverge M \<Longrightarrow> \<exists>N. M \<rightarrow>[k] N"
+proof (induction k arbitrary: M)
+  case 0 then show ?case using betas.refl by blast
+next
+  case (Suc k)
+  from Suc.prems obtain M1 where "M \<rightarrow> M1" and "diverge M1" using diverge.cases by blast
+  then obtain N where "M1 \<rightarrow>[k] N" using Suc.IH by blast
+  then show ?case using \<open>M \<rightarrow> M1\<close> betas.step by blast
+qed
+
+lemma diverge_of_infinite: "(\<forall>k. \<exists>N. M \<rightarrow>[k] N) \<Longrightarrow> diverge M"
+proof (coinduction arbitrary: M rule: diverge.coinduct)
+  case (diverge M)
+  then obtain M1 where m1: "M \<rightarrow>[1] M1" by blast
+  then have "M \<rightarrow> M1" by (auto elim: betas.cases)
+  moreover have "\<forall>k. \<exists>N. M1 \<rightarrow>[k] N"
+  proof
+    fix k
+    from diverge obtain N where "M \<rightarrow>[Suc k] N" by blast
+    then obtain P where "M \<rightarrow> P" and "P \<rightarrow>[k] N" by (auto elim: betas.cases)
+    then have "M1 = P" using \<open>M \<rightarrow> M1\<close> beta_deterministic by blast
+    then show "\<exists>N. M1 \<rightarrow>[k] N" using \<open>P \<rightarrow>[k] N\<close> by blast
+  qed
+  ultimately show ?case by blast
+qed
+
+lemma ldds_step:
+  assumes ls: "Q \<lesssim> N" and zN: "z \<notin> FVars N"
+  shows "diverge M[N <- z] \<Longrightarrow>
+    diverge M[Q <- z] \<or> (\<exists>n M'. M[Q <- z] \<rightarrow>[Suc n] M'[Q <- z] \<and> diverge M'[N <- z])"
+proof (induction M rule: measure_induct_rule[where f = "\<lambda>M. count_term z M"])
+  case (less M)
+  note Md = less.prems
+  show ?case
+  proof (cases "blocked z M")
+    case False
+    from Md obtain X where sX: "M[N <- z] \<rightarrow> X" and "diverge X" using diverge.cases by blast
+    then obtain M' where "M \<rightarrow> M'" and mX: "M'[N <- z] = X"
+      using b3_root[of "M[N <- z]" X M N z] False by auto
+    then have "M[Q <- z] \<rightarrow> M'[Q <- z]" using beta_subst_unblocked False by auto
+    then have "M[Q <- z] \<rightarrow>[Suc 0] M'[Q <- z]" using betas.refl betas.step by fastforce
+    moreover have "diverge M'[N <- z]" using \<open>diverge X\<close> mX by simp
+    ultimately show ?thesis by blast
+  next
+    case True
+    obtain E hole where Meq: "M = E[Var z <- hole]" and hz: "hole \<noteq> z"
+      and niN: "hole \<notin> FVars N" and niQ: "hole \<notin> FVars Q"
+      and ctx_subst: "\<forall>Na. hole \<notin> FVars Na \<longrightarrow> eval_ctx hole E[Na <- z]"
+      using blocked_fresh_hole[of "FVars N \<union> FVars Q" z M] finite_FVars True by auto
+    have ctxN: "eval_ctx hole (E[N <- z])" using ctx_subst niN by auto
+    have ctxQ: "eval_ctx hole (E[Q <- z])" using ctx_subst niQ by auto
+    have MNeq: "M[N <- z] = E[N <- z][N <- hole]"
+      using Meq usubst_usubst[of hole z N] hz niN by simp
+    have MQeq: "M[Q <- z] = E[Q <- z][Q <- hole]"
+      using Meq usubst_usubst[of hole z Q] hz niQ by simp
+    show ?thesis
+    proof (cases "diverge Q")
+      case True
+      have "diverge (E[Q <- z][Q <- hole])" using div_ctx[OF ctxQ True] .
+      then show ?thesis using MQeq by simp
+    next
+      case False
+      then have "normalizes Q" using diverge_or_normalizes by auto
+      then obtain Nf where nf: "normal Nf" and QNf: "Q \<rightarrow>* Nf" and NNf: "N \<rightarrow>* Nf"
+        using ls unfolding less_defined_def by auto
+      have dNfN: "diverge (E[N <- z][Nf <- hole])"
+      proof -
+        have "E[N <- z][N <- hole] \<rightarrow>* E[N <- z][Nf <- hole]"
+          using eval_ctx_beta_star[OF ctxN NNf] .
+        then show ?thesis using Md MNeq beta_star_diverge_forw by simp
+      qed
+      have hNf: "hole \<notin> FVars Nf" using NNf FVars_beta_star niN by auto
+      have znNf: "z \<notin> FVars Nf" using NNf FVars_beta_star zN by auto
+      have vNf: "val Nf"
+      proof (rule ccontr)
+        assume "\<not> val Nf"
+        then have "stuck Nf" using nf progress by auto
+        then have "stuck (E[N <- z][Nf <- hole])" using stuck_ctx[OF ctxN _ hNf] by auto
+        then have "normalizes (E[N <- z][Nf <- hole])"
+          using stucks_are_normal normals_normalizes by blast
+        then show False using dNfN diverge_xor_normalizes by blast
+      qed
+      define M2 where "M2 = E[Nf <- hole]"
+      have M2N: "M2[N <- z] = E[N <- z][Nf <- hole]"
+        unfolding M2_def using usubst_usubst[of hole z N] hz niN znNf by simp
+      have M2Q: "M2[Q <- z] = E[Q <- z][Nf <- hole]"
+        unfolding M2_def using usubst_usubst[of hole z Q] hz niQ znNf by simp
+      have chE: "count_term hole E = 1"
+      proof -
+        have "count_term hole (E[N <- z]) = count_term hole E"
+          using count_subst[of z hole E N] hz niN by (simp add: count_idle)
+        then show ?thesis using count_eval_ctx[OF ctxN] by simp
+      qed
+      have "count_term z M = count_term hole E * 1 + count_term z E"
+        unfolding Meq using count_subst[of hole z E "Var z"] hz by simp
+      moreover have "count_term z M2 = count_term hole E * 0 + count_term z E"
+        unfolding M2_def using count_subst[of hole z E Nf] hz znNf by (simp add: count_idle)
+      ultimately have cnt: "count_term z M2 < count_term z M" using chE by simp
+      have dM2N: "diverge M2[N <- z]" using M2N dNfN by simp
+      obtain a where QNfa: "Q \<rightarrow>[a] Nf" using QNf beta_star_def by auto
+      have redMM2: "M[Q <- z] \<rightarrow>[a] M2[Q <- z]"
+        using MQeq M2Q eval_ctx_betas[OF ctxQ QNfa] by simp
+      from less.IH[OF cnt dM2N] show ?thesis
+      proof
+        assume "diverge M2[Q <- z]"
+        then have "diverge M[Q <- z]"
+          using redMM2 betas_diverge_back by blast
+        then show ?thesis by blast
+      next
+        assume "\<exists>n M'. M2[Q <- z] \<rightarrow>[Suc n] M'[Q <- z] \<and> diverge M'[N <- z]"
+        then obtain n M' where st: "M2[Q <- z] \<rightarrow>[Suc n] M'[Q <- z]" and dM'N: "diverge M'[N <- z]" by blast
+        have "M[Q <- z] \<rightarrow>[a + Suc n] M'[Q <- z]" using redMM2 st betas_path_sum by blast
+        then have "M[Q <- z] \<rightarrow>[Suc (a + n)] M'[Q <- z]" by simp
+        then show ?thesis using dM'N by blast
+      qed
+    qed
+  qed
+qed
+
+lemma betas_take: "M \<rightarrow>[b] Y \<Longrightarrow> k \<le> b \<Longrightarrow> \<exists>t. M \<rightarrow>[k] t"
+proof (induction k arbitrary: M b)
+  case 0 show ?case using betas.refl by blast
+next
+  case (Suc k)
+  from Suc.prems(2) obtain b' where b': "b = Suc b'" using Suc_le_D by blast
+  from Suc.prems(1) b' obtain M1 where "M \<rightarrow> M1" and "M1 \<rightarrow>[b'] Y" by (auto elim: betas.cases)
+  moreover have "k \<le> b'" using Suc.prems(2) b' by simp
+  ultimately obtain t where "M1 \<rightarrow>[k] t" using Suc.IH by blast
+  then show ?case using \<open>M \<rightarrow> M1\<close> betas.step by blast
+qed
+
+lemma less_defined_diverge_subst:
+  assumes ls: "Q \<lesssim> N" and zN: "z \<notin> FVars N" and Md: "diverge M[N <- z]"
+  shows "diverge M[Q <- z]"
+proof (rule diverge_of_infinite, rule allI)
+  have key: "\<And>k M. diverge M[N <- z] \<Longrightarrow> \<exists>t. M[Q <- z] \<rightarrow>[k] t"
+  proof -
+    fix k0 M0
+    show "diverge M0[N <- z] \<Longrightarrow> \<exists>t. M0[Q <- z] \<rightarrow>[k0] t"
+    proof (induction k0 arbitrary: M0 rule: less_induct)
+      case (less k M)
+      from ldds_step[OF ls zN less.prems] show ?case
+      proof
+        assume "diverge M[Q <- z]"
+        then show ?thesis using diverge_reduces_k by blast
+      next
+        assume "\<exists>n M'. M[Q <- z] \<rightarrow>[Suc n] M'[Q <- z] \<and> diverge M'[N <- z]"
+        then obtain n M' where st: "M[Q <- z] \<rightarrow>[Suc n] M'[Q <- z]" and dM': "diverge M'[N <- z]" by blast
+        show ?thesis
+        proof (cases "k \<le> Suc n")
+          case True
+          then show ?thesis using st betas_take by blast
+        next
+          case False
+          then have "k - Suc n < k" and "Suc n + (k - Suc n) = k" by auto
+          then obtain t where "M'[Q <- z] \<rightarrow>[k - Suc n] t" using less.IH dM' by blast
+          then have "M[Q <- z] \<rightarrow>[Suc n + (k - Suc n)] t" using st betas_path_sum by blast
+          then show ?thesis using \<open>Suc n + (k - Suc n) = k\<close> by metis
+        qed
+      qed
+    qed
+  qed
+  fix k show "\<exists>t. M[Q <- z] \<rightarrow>[k] t" using key[OF Md] by blast
+qed
+
+text \<open>The fixpoint-unfolding at a value is independent of the chosen binder representation
+  (the paper reads @{term "V \<in> \<lblot>To A B\<rblot>"} for whatever @{text "V = Fix f x R"} one has to hand):
+  both unfoldings are the unique @{text FixBeta}-reduct of @{term "App V U"} for a closed argument
+  @{text U}.\<close>
+lemma To_unfold:
+  assumes iV: "V \<in> \<lblot>To A B\<rblot>" and vU: "val U" and clU: "FVars U = {}" and iU: "U \<in> \<lblot>A\<rblot>"
+      and Veq: "V = Fix f x R"
+  shows "R[U <- x][V <- f] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+proof -
+  from iV obtain f' x' M0' where V': "V = Fix f' x' M0'"
+      and prop': "\<forall>U'\<in>Vals0. FVars U' = {} \<longrightarrow> U' \<in> \<lblot>A\<rblot> \<longrightarrow> M0'[U' <- x'][Fix f' x' M0' <- f'] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+    unfolding type_semantics.simps by blast
+  have m: "M0'[U <- x'][V <- f'] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+    using prop' vU clU iU V' unfolding Vals0_def by auto
+  have fU: "f \<notin> FVars U" and f'U: "f' \<notin> FVars U" using clU by auto
+  have "App V U \<rightarrow> R[U <- x][V <- f]" using beta.FixBeta[OF vU fU, of x R] Veq by simp
+  moreover have "App V U \<rightarrow> M0'[U <- x'][V <- f']" using beta.FixBeta[OF vU f'U, of x' M0'] V' by simp
+  ultimately have "R[U <- x][V <- f] = M0'[U <- x'][V <- f']" using beta_deterministic by blast
+  then show ?thesis using m by simp
+qed
+
+lemma OnlyTo_unfold:
+  assumes iV: "V \<in> \<lblot>OnlyTo A B\<rblot>" and vU: "val U" and clU: "FVars U = {}"
+      and Veq: "V = Fix f x R" and mem: "R[U <- x][V <- f] \<in> \<T>\<lblot>B\<rblot>"
+  shows "U \<in> \<lblot>A\<rblot>"
+proof -
+  from iV obtain f' x' M0' where V': "V = Fix f' x' M0'"
+      and prop': "\<forall>U'\<in>Vals0. FVars U' = {} \<longrightarrow> M0'[U' <- x'][Fix f' x' M0' <- f'] \<in> \<T>\<lblot>B\<rblot> \<longrightarrow> U' \<in> \<lblot>A\<rblot>"
+    unfolding type_semantics.simps by blast
+  have fU: "f \<notin> FVars U" and f'U: "f' \<notin> FVars U" using clU by auto
+  have "App V U \<rightarrow> R[U <- x][V <- f]" using beta.FixBeta[OF vU fU, of x R] Veq by simp
+  moreover have "App V U \<rightarrow> M0'[U <- x'][V <- f']" using beta.FixBeta[OF vU f'U, of x' M0'] V' by simp
+  ultimately have "R[U <- x][V <- f] = M0'[U <- x'][V <- f']" using beta_deterministic by blast
+  then have "M0'[U <- x'][V <- f'] \<in> \<T>\<lblot>B\<rblot>" using mem by simp
+  then show ?thesis using prop' vU clU V' unfolding Vals0_def by auto
+qed
+
+text \<open>The paper's substitution equation @{text "(Q'[V/x, fix f(x).Q'/f])[N/z]
+  = (Q'[N/z])[V/x, fix f(x).Q'[N/z]]"}, valid because the argument @{text U} is closed
+  (Def.\ 4.1: @{text Vals0} are the closed values).\<close>
+lemma unfold_subst:
+  assumes clU: "FVars U = {}" and fz: "f \<noteq> z" and xz: "x \<noteq> z"
+      and fS: "f \<notin> FVars S" and xS: "x \<notin> FVars S"
+  shows "(Q0[U <- x][Fix f x Q0 <- f])[S <- z]
+       = (Q0[S <- z])[U <- x][Fix f x (Q0[S <- z]) <- f]"
+proof -
+  have zU: "z \<notin> FVars U" using clU by simp
+  have e1: "(Q0[U <- x][Fix f x Q0 <- f])[S <- z]
+      = (Q0[U <- x])[S <- z][(Fix f x Q0)[S <- z] <- f]"
+    by (rule usubst_usubst[OF fz fS])
+  have e2: "(Q0[U <- x])[S <- z] = (Q0[S <- z])[U <- x]"
+    using usubst_usubst[OF xz xS, of Q0 U] zU by simp
+  have e3: "(Fix f x Q0)[S <- z] = Fix f x (Q0[S <- z])"
+    using fz xz fS xS by (simp add: usubst_simps(7))
+  show ?thesis unfolding e1 e2 e3 ..
+qed
+
+lemma safe_Prod: "safe (Prod A B) \<Longrightarrow> safe A \<and> safe B" by (auto elim: safe.cases)
+lemma safe_To: "safe (To A B) \<Longrightarrow> safe A \<and> safe B" by (auto elim: safe.cases)
+lemma safe_OnlyTo: "safe (OnlyTo A B) \<Longrightarrow> safe A \<and> finitely_verifiable B" by (auto elim: safe.cases)
+lemma fv_Prod: "finitely_verifiable (Prod A B) \<Longrightarrow> finitely_verifiable A \<and> finitely_verifiable B"
+  by (auto elim: finitely_verifiable.cases)
+lemma not_fv_To: "\<not> finitely_verifiable (To A B)" by (auto elim: finitely_verifiable.cases)
+lemma not_fv_OnlyTo: "\<not> finitely_verifiable (OnlyTo A B)" by (auto elim: finitely_verifiable.cases)
 
 theorem b7_induction:
   assumes cl: "FVars M[N <- z] = {}" and ls: "Q \<lesssim> N" and nzN: "z \<notin> FVars N"
-  shows "M[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<Longrightarrow> M[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
-    and "M[N <- z] \<notin> \<T>\<lblot>A\<rblot> \<Longrightarrow> M[Q <- z] \<notin> \<T>\<lblot>A\<rblot>"
+  shows "safe A \<Longrightarrow> M[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<Longrightarrow> M[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+    and "finitely_verifiable A \<Longrightarrow> M[N <- z] \<notin> \<T>\<lblot>A\<rblot> \<Longrightarrow> M[Q <- z] \<notin> \<T>\<lblot>A\<rblot>"
 proof(induction A arbitrary: M)
   case Nat
   {
@@ -5432,7 +5666,7 @@ proof(induction A arbitrary: M)
     next
       case B
       then show ?thesis unfolding bottom_semantics.simps 
-        using less_defined_diverge_subst ls by blast
+        using less_defined_diverge_subst ls nzN by blast
     qed
   next
     case 2
@@ -5508,7 +5742,7 @@ proof(induction A arbitrary: M)
       next
         case C
         then have "diverge M[Q <- z]" 
-          using ls less_defined_diverge_subst by auto
+          using ls nzN less_defined_diverge_subst by auto
         then show ?thesis unfolding tau_semantics.simps 
           using diverge_xor_normalizes vals_are_normal normalizes_def
           by auto
@@ -5518,14 +5752,16 @@ next
   case (Prod A1 A2)
   {
     case 1
-    then consider (A) "diverge M[N <- z]" | (B) "\<exists>V1 V2. M[N <- z] \<rightarrow>* (Pair V1 V2) \<and> V1 \<in> \<lblot>A1\<rblot> \<and> V2 \<in> \<lblot>A2\<rblot> \<and> val (Pair V1 V2)"
+    then have safeP: "safe (Prod A1 A2)" and memb1: "M[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>Prod A1 A2\<rblot>" by blast+
+    have sA1: "safe A1" and sA2: "safe A2" using safe_Prod[OF safeP] by blast+
+    from memb1 consider (A) "diverge M[N <- z]" | (B) "\<exists>V1 V2. M[N <- z] \<rightarrow>* (Pair V1 V2) \<and> V1 \<in> \<lblot>A1\<rblot> \<and> V2 \<in> \<lblot>A2\<rblot> \<and> val (Pair V1 V2)"
       unfolding bottom_semantics.simps tau_semantics.simps type_semantics.simps
       by auto
     then show ?case
     proof cases
       case A
       then have "diverge M[Q <- z]" 
-        using ls less_defined_diverge_subst by auto                 
+        using ls nzN less_defined_diverge_subst by auto                 
       then show ?thesis by simp
     next
       case B
@@ -5554,7 +5790,7 @@ next
           by (auto simp: beta_star_def intro!: betas.refl)
         then have TbN2: "W2[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" unfolding bottom_semantics.simps by simp
         from TbN1 TbN2 have TbA1: "W1[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A1\<rblot>" and TbA2: "W2[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>"
-          using Prod.IH(1)[of W1] Prod.IH(3)[of W2] by auto
+          using Prod.IH(1)[OF sA1, of W1] Prod.IH(3)[OF sA2, of W2] by auto
         from TbA1 TbA2 consider (a) "diverge W1[Q <- z] \<or> diverge W2[Q <- z]"
           | (b) "W1[Q <- z] \<in> \<T>\<lblot>A1\<rblot> \<and> W2[Q <- z] \<in> \<T>\<lblot>A2\<rblot>"
           unfolding bottom_semantics.simps by auto
@@ -5598,7 +5834,8 @@ next
     qed
   next
     case 2
-    then have notT: "M[N <- z] \<notin> \<T>\<lblot>Prod A1 A2\<rblot>" by simp
+    then have fvP: "finitely_verifiable (Prod A1 A2)" and notT: "M[N <- z] \<notin> \<T>\<lblot>Prod A1 A2\<rblot>" by blast+
+    have fA1: "finitely_verifiable A1" and fA2: "finitely_verifiable A2" using fv_Prod[OF fvP] by blast+
     consider (A) "\<exists>V. M[N <- z] \<rightarrow>* V \<and> val V" | (B) "getStuck M[N <- z]" | (C) "diverge M[N <- z]"
     proof -
       have "diverge M[N <- z] \<or> normalizes M[N <- z]" by (rule diverge_or_normalizes)
@@ -5621,7 +5858,7 @@ next
     then show ?case
     proof cases
       case C
-      then have "diverge M[Q <- z]" using ls less_defined_diverge_subst by auto
+      then have "diverge M[Q <- z]" using ls nzN less_defined_diverge_subst by auto
       then show ?thesis unfolding tau_semantics.simps
         using diverge_xor_normalizes vals_are_normal normalizes_def by auto
     next
@@ -5682,13 +5919,13 @@ next
           proof
             assume "V1 \<notin> \<lblot>A1\<rblot>"
             then have "W1[N <- z] \<notin> \<T>\<lblot>A1\<rblot>" using w1 vV1 val_tau_iff by auto
-            then have "W1[Q <- z] \<notin> \<T>\<lblot>A1\<rblot>" using Prod.IH(2)[of W1] by auto
+            then have "W1[Q <- z] \<notin> \<T>\<lblot>A1\<rblot>" using Prod.IH(2)[OF fA1, of W1] by auto
             then have "W1[Q <- z] \<notin> \<lblot>A1\<rblot>" using vW1 val_tau_iff by auto
             then show ?thesis by simp
           next
             assume "V2 \<notin> \<lblot>A2\<rblot>"
             then have "W2[N <- z] \<notin> \<T>\<lblot>A2\<rblot>" using w2 vV2 val_tau_iff by auto
-            then have "W2[Q <- z] \<notin> \<T>\<lblot>A2\<rblot>" using Prod.IH(4)[of W2] by auto
+            then have "W2[Q <- z] \<notin> \<T>\<lblot>A2\<rblot>" using Prod.IH(4)[OF fA2, of W2] by auto
             then have "W2[Q <- z] \<notin> \<lblot>A2\<rblot>" using vW2 val_tau_iff by auto
             then show ?thesis by simp
           qed
@@ -5709,19 +5946,123 @@ next
   case (To A1 A2)
   {
     case 1
-    then show ?case sorry
+    then have safeT: "safe (To A1 A2)" and memb1: "M[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>To A1 A2\<rblot>" by blast+
+    have sA2: "safe A2" using safe_To[OF safeT] by blast
+    from memb1 have "M[N <- z] \<in> \<T>\<lblot>To A1 A2\<rblot> \<or> diverge M[N <- z]"
+      unfolding bottom_semantics.simps by simp
+    then show ?case
+    proof
+      assume "diverge M[N <- z]"
+      then have "diverge M[Q <- z]" using ls nzN less_defined_diverge_subst by auto
+      then show ?thesis unfolding bottom_semantics.simps by simp
+    next
+      assume "M[N <- z] \<in> \<T>\<lblot>To A1 A2\<rblot>"
+      then obtain V where iV: "V \<in> \<lblot>To A1 A2\<rblot>" and sV: "M[N <- z] \<rightarrow>* V" and vV: "val V"
+        unfolding tau_semantics.simps by auto
+      from iV obtain f0 x0 R0 where "V = Fix f0 x0 R0" unfolding type_semantics.simps by blast
+      then obtain f x R where Veq: "V = Fix f x R"
+          and fr: "f \<notin> FVars N \<union> FVars Q \<union> {z}" and xr: "x \<notin> FVars N \<union> FVars Q \<union> {z}"
+        using Fix_refresh[of "FVars N \<union> FVars Q \<union> {z}" f0 x0 R0] finite_FVars by auto
+      have fN: "f \<notin> FVars N" "f \<notin> FVars Q" "f \<noteq> z" and xN: "x \<notin> FVars N" "x \<notin> FVars Q" "x \<noteq> z"
+        using fr xr by auto
+      from b5[of V z N M Q] vV nzN sV ls
+      have "diverge M[Q <- z] \<or> (\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z)" by simp
+      then show ?thesis
+      proof
+        assume "diverge M[Q <- z]"
+        then show ?thesis unfolding bottom_semantics.simps by simp
+      next
+        assume "\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z"
+        then obtain W where vW: "val W" and sW: "M[Q <- z] \<rightarrow>* W" and bp: "b5_prop V W Q N z" by auto
+        from bp Veq fr xr obtain Q0 where Weq: "W = Fix f x (Q0[Q <- z])" and Q0N: "Q0[N <- z] = R"
+          unfolding b5_prop_def by (metis (no_types, lifting))
+        have "W \<in> \<lblot>To A1 A2\<rblot>"
+        proof -
+          have "\<forall>U \<in> Vals0. FVars U = {} \<longrightarrow> U \<in> \<lblot>A1\<rblot> \<longrightarrow> (Q0[Q <- z])[U <- x][W <- f] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>"
+          proof (intro ballI impI)
+            fix U :: "'a term"
+            assume U0: "U \<in> Vals0" and clU: "FVars U = {}" and iU: "U \<in> \<lblot>A1\<rblot>"
+            have vU: "val U" using U0 unfolding Vals0_def by simp
+            have VpropU: "R[U <- x][V <- f] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" using To_unfold[OF iV vU clU iU Veq] .
+            have Tn: "(Q0[U <- x][Fix f x Q0 <- f])[N <- z] = R[U <- x][V <- f]"
+              using unfold_subst[OF clU fN(3) xN(3) fN(1) xN(1), of Q0] Q0N Veq by simp
+            have Tq: "(Q0[U <- x][Fix f x Q0 <- f])[Q <- z] = (Q0[Q <- z])[U <- x][W <- f]"
+              using unfold_subst[OF clU fN(3) xN(3) fN(2) xN(2), of Q0] Weq by simp
+            have "(Q0[U <- x][Fix f x Q0 <- f])[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" using Tn VpropU by simp
+            then have "(Q0[U <- x][Fix f x Q0 <- f])[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" using To.IH(3)[OF sA2] by blast
+            then show "(Q0[Q <- z])[U <- x][W <- f] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" using Tq by simp
+          qed
+          then show ?thesis unfolding Weq type_semantics.simps by blast
+        qed
+        then have "M[Q <- z] \<in> \<T>\<lblot>To A1 A2\<rblot>" using sW vW unfolding tau_semantics.simps by auto
+        then show ?thesis unfolding bottom_semantics.simps by simp
+      qed
+    qed
   next
     case 2
-    then show ?case sorry
+    then show ?case using not_fv_To by blast
   }
 next
   case (OnlyTo A1 A2)
   {
     case 1
-    then show ?case sorry
+    then have safeO: "safe (OnlyTo A1 A2)" and memb1: "M[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo A1 A2\<rblot>" by blast+
+    have fvA2: "finitely_verifiable A2" using safe_OnlyTo[OF safeO] by blast
+    from memb1 have "M[N <- z] \<in> \<T>\<lblot>OnlyTo A1 A2\<rblot> \<or> diverge M[N <- z]"
+      unfolding bottom_semantics.simps by simp
+    then show ?case
+    proof
+      assume "diverge M[N <- z]"
+      then have "diverge M[Q <- z]" using ls nzN less_defined_diverge_subst by auto
+      then show ?thesis unfolding bottom_semantics.simps by simp
+    next
+      assume "M[N <- z] \<in> \<T>\<lblot>OnlyTo A1 A2\<rblot>"
+      then obtain V where iV: "V \<in> \<lblot>OnlyTo A1 A2\<rblot>" and sV: "M[N <- z] \<rightarrow>* V" and vV: "val V"
+        unfolding tau_semantics.simps by auto
+      from iV obtain f0 x0 R0 where "V = Fix f0 x0 R0" unfolding type_semantics.simps by blast
+      then obtain f x R where Veq: "V = Fix f x R"
+          and fr: "f \<notin> FVars N \<union> FVars Q \<union> {z}" and xr: "x \<notin> FVars N \<union> FVars Q \<union> {z}"
+        using Fix_refresh[of "FVars N \<union> FVars Q \<union> {z}" f0 x0 R0] finite_FVars by auto
+      have fN: "f \<notin> FVars N" "f \<notin> FVars Q" "f \<noteq> z" and xN: "x \<notin> FVars N" "x \<notin> FVars Q" "x \<noteq> z"
+        using fr xr by auto
+      from b5[of V z N M Q] vV nzN sV ls
+      have "diverge M[Q <- z] \<or> (\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z)" by simp
+      then show ?thesis
+      proof
+        assume "diverge M[Q <- z]"
+        then show ?thesis unfolding bottom_semantics.simps by simp
+      next
+        assume "\<exists>W. val W \<and> M[Q <- z] \<rightarrow>* W \<and> b5_prop V W Q N z"
+        then obtain W where vW: "val W" and sW: "M[Q <- z] \<rightarrow>* W" and bp: "b5_prop V W Q N z" by auto
+        from bp Veq fr xr obtain Q0 where Weq: "W = Fix f x (Q0[Q <- z])" and Q0N: "Q0[N <- z] = R"
+          unfolding b5_prop_def by (metis (no_types, lifting))
+        have "W \<in> \<lblot>OnlyTo A1 A2\<rblot>"
+        proof -
+          have "\<forall>U \<in> Vals0. FVars U = {} \<longrightarrow> (Q0[Q <- z])[U <- x][W <- f] \<in> \<T>\<lblot>A2\<rblot> \<longrightarrow> U \<in> \<lblot>A1\<rblot>"
+          proof (intro ballI impI)
+            fix U :: "'a term"
+            assume U0: "U \<in> Vals0" and clU: "FVars U = {}"
+              and mem: "(Q0[Q <- z])[U <- x][W <- f] \<in> \<T>\<lblot>A2\<rblot>"
+            have vU: "val U" using U0 unfolding Vals0_def by simp
+            have Tq: "(Q0[U <- x][Fix f x Q0 <- f])[Q <- z] = (Q0[Q <- z])[U <- x][W <- f]"
+              using unfold_subst[OF clU fN(3) xN(3) fN(2) xN(2), of Q0] Weq by simp
+            have Tn: "(Q0[U <- x][Fix f x Q0 <- f])[N <- z] = R[U <- x][V <- f]"
+              using unfold_subst[OF clU fN(3) xN(3) fN(1) xN(1), of Q0] Q0N Veq by simp
+            have "(Q0[U <- x][Fix f x Q0 <- f])[Q <- z] \<in> \<T>\<lblot>A2\<rblot>" using Tq mem by simp
+            then have "(Q0[U <- x][Fix f x Q0 <- f])[N <- z] \<in> \<T>\<lblot>A2\<rblot>"
+              using OnlyTo.IH(4)[OF fvA2, of "Q0[U <- x][Fix f x Q0 <- f]"] by blast
+            then have "R[U <- x][V <- f] \<in> \<T>\<lblot>A2\<rblot>" using Tn by simp
+            then show "U \<in> \<lblot>A1\<rblot>" using OnlyTo_unfold[OF iV vU clU Veq] by blast
+          qed
+          then show ?thesis unfolding Weq type_semantics.simps by blast
+        qed
+        then have "M[Q <- z] \<in> \<T>\<lblot>OnlyTo A1 A2\<rblot>" using sW vW unfolding tau_semantics.simps by auto
+        then show ?thesis unfolding bottom_semantics.simps by simp
+      qed
+    qed
   next
     case 2
-    then show ?case sorry
+    then show ?case using not_fv_OnlyTo by blast
   }
 next
   case Ok
@@ -5733,7 +6074,7 @@ next
     then show ?case
     proof cases
       case A
-      then have "diverge M[Q <- z]" using ls less_defined_diverge_subst by auto
+      then have "diverge M[Q <- z]" using ls nzN less_defined_diverge_subst by auto
       then show ?thesis unfolding bottom_semantics.simps by simp
     next
       case B
@@ -5799,7 +6140,7 @@ next
       qed
     next
       case C
-      then have "diverge M[Q <- z]" using ls less_defined_diverge_subst by auto
+      then have "diverge M[Q <- z]" using ls nzN less_defined_diverge_subst by auto
       then show ?thesis unfolding tau_semantics.simps type_semantics.simps
         using diverge_xor_normalizes vals_are_normal normalizes_def by (auto simp: Vals0_def)
     qed
@@ -5808,7 +6149,8 @@ qed
 
 theorem b7: 
   assumes cl: "FVars M[N <- z] = {}" and ls: "Q \<lesssim> N"
-  shows "(M[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<longrightarrow> M[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>) \<and> (M[N <- z] \<notin> \<T>\<lblot>A\<rblot> \<longrightarrow> M[Q <- z] \<notin> \<T>\<lblot>A\<rblot>)"
+  shows "(safe A \<longrightarrow> M[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<longrightarrow> M[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>)
+       \<and> (finitely_verifiable A \<longrightarrow> M[N <- z] \<notin> \<T>\<lblot>A\<rblot> \<longrightarrow> M[Q <- z] \<notin> \<T>\<lblot>A\<rblot>)"
 proof(cases "z \<in> FVars M")
   case True
   then have "z \<notin> FVars N" using cl FVars_usubst[of M N z] by auto
