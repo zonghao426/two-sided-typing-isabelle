@@ -3808,10 +3808,119 @@ proof -
   qed
 qed
 
-lemma b5_induction: 
+text \<open>@{text "guarded z U"}: every free occurrence of @{text z} in @{text U} sits below a
+  fixpoint abstraction. Under this invariant, substituting for @{text z} only touches the bodies
+  of @{text fix}-abstractions, which are values regardless of their content, so valueness of
+  @{text "U[N <- z]"} is preserved when we substitute a different term for @{text z}. This is the
+  invariant that Lemma B.4's construction secretly provides for its witness (the surviving
+  @{text z}-occurrences are exactly the never-evaluated ones), and it is what makes Lemma B.5's
+  pair case go through.\<close>
+
+inductive guarded :: "'var::var \<Rightarrow> 'var term \<Rightarrow> bool" where
+  gVar: "x \<noteq> z \<Longrightarrow> guarded z (Var x)"
+| gZero: "guarded z Zero"
+| gSucc: "guarded z M \<Longrightarrow> guarded z (Succ M)"
+| gPred: "guarded z M \<Longrightarrow> guarded z (Pred M)"
+| gApp: "guarded z M \<Longrightarrow> guarded z N \<Longrightarrow> guarded z (App M N)"
+| gPair: "guarded z M \<Longrightarrow> guarded z N \<Longrightarrow> guarded z (Pair M N)"
+| gIf: "guarded z M \<Longrightarrow> guarded z N \<Longrightarrow> guarded z P \<Longrightarrow> guarded z (If M N P)"
+| gLet: "guarded z M \<Longrightarrow> guarded z N \<Longrightarrow> guarded z (Let xy M N)"
+| gLetB: "z \<in> dset xy \<Longrightarrow> guarded z M \<Longrightarrow> guarded z (Let xy M N)"
+| gFix: "guarded z (Fix f x M)"
+
+lemma guarded_simps[simp]:
+  "guarded z (Var x) = (x \<noteq> z)"
+  "guarded z Zero"
+  "guarded z (Succ M) = guarded z M"
+  "guarded z (Pred M) = guarded z M"
+  "guarded z (App M1 M2) = (guarded z M1 \<and> guarded z M2)"
+  "guarded z (Pair M1 M2) = (guarded z M1 \<and> guarded z M2)"
+  "guarded z (If M1 M2 M3) = (guarded z M1 \<and> guarded z M2 \<and> guarded z M3)"
+  "guarded z (Fix f x M)"
+  by (auto intro: guarded.intros elim: guarded.cases)
+
+lemma val_Succ_num:
+  assumes "val (Succ M)" shows "num M"
+  using assms by (cases rule: val.cases) (auto elim: num.cases)
+
+lemma val_Pair_D:
+  assumes "val (term.Pair M N)" shows "val M \<and> val N"
+  using assms by (cases rule: val.cases) (auto elim: num.cases)
+
+lemma not_val_Pred[simp]: "\<not> val (Pred M)"
+  by (rule notI, cases rule: val.cases) (auto elim: num.cases)
+lemma not_val_App[simp]: "\<not> val (App M1 M2)"
+  by (rule notI, cases rule: val.cases) (auto elim: num.cases)
+lemma not_val_If[simp]: "\<not> val (If M1 M2 M3)"
+  by (rule notI, cases rule: val.cases) (auto elim: num.cases)
+lemma not_val_Let[simp]: "\<not> val (term.Let xy M1 M2)"
+  by (rule notI, cases rule: val.cases) (auto elim: num.cases)
+
+lemma val_usubst_Let_False: "\<not> val ((term.Let xy M N)[s <- z])"
+proof -
+  obtain xy' N' where eq: "term.Let xy M N = term.Let xy' M N'"
+    and d: "dset xy' \<inter> ({z} \<union> FVars s) = {}"
+    using Let_refresh[of "{z} \<union> FVars s" xy M N] finite_FVars by auto
+  have "z \<notin> dset xy'" and "dset xy' \<inter> FVars s = {}" using d by auto
+  then have "(term.Let xy M N)[s <- z] = term.Let xy' (M[s <- z]) (N'[s <- z])"
+    unfolding eq by (rule usubst_Let)
+  then show ?thesis by simp
+qed
+
+lemma num_guarded_zfree: "num W \<Longrightarrow> W = M[N <- z] \<Longrightarrow> guarded z M \<Longrightarrow> z \<notin> FVars M"
+proof (induction W arbitrary: M rule: num.induct)
+  case 1
+  then have "M = Zero" using subst_Zero_inversion by (metis guarded_simps(1))
+  then show ?case by simp
+next
+  case (2 n)
+  from 2 have "M \<noteq> Var z" by auto
+  then obtain M' where M': "M = Succ M'" and n: "M'[N <- z] = n"
+    using subst_Succ_inversion 2(3) by metis
+  have gM': "guarded z M'" using 2(4) M' by simp
+  have "z \<notin> FVars M'" using 2 n gM' by blast
+  then show ?case using M' by (simp add: FVars_usubst)
+qed
+
+lemma val_subst_guarded:
+  "guarded z U \<Longrightarrow> val (U[N <- z]) \<Longrightarrow> val (U[P <- z])"
+proof (induction U rule: guarded.induct)
+  case (gVar x z) then show ?case by simp
+next
+  case (gZero z) then show ?case by simp
+next
+  case (gSucc z M)
+  then have "num (M[N <- z])" using val_Succ_num by simp
+  then have "z \<notin> FVars M" using num_guarded_zfree gSucc.hyps by blast
+  then show ?case using gSucc.prems by (simp add: subst_idle)
+next
+  case (gPred z M) then show ?case using gPred.prems by simp
+next
+  case (gApp z M Na) then show ?case using gApp.prems by simp
+next
+  case (gPair z M Na)
+  from gPair.prems have "val (M[N <- z]) \<and> val (Na[N <- z])" using val_Pair_D by simp
+  then show ?case using gPair.IH by (auto intro: val.intros(3))
+next
+  case (gIf z M Na Pa) then show ?case using gIf.prems by simp
+next
+  case (gLet z M Na xy) then show ?case using gLet.prems val_usubst_Let_False by blast
+next
+  case (gLetB z xy M Na) then show ?case using gLetB.prems val_usubst_Let_False by blast
+next
+  case (gFix z f x M)
+  obtain f' x' M' where eq: "Fix f x M = Fix f' x' M'"
+    and f': "f' \<notin> {z} \<union> FVars P" and x': "x' \<notin> {z} \<union> FVars P"
+    using Fix_refresh[of "{z} \<union> FVars P" f x M] finite_FVars by auto
+  have "(Fix f x M)[P <- z] = Fix f' x' (M'[P <- z])"
+    unfolding eq using f' x' by (simp add: usubst_simps(7))
+  then show ?case by (simp add: val.intros(4))
+qed
+
+lemma b5_induction:
   assumes "val V" and "z \<notin> FVars N" and "M[N <- z] \<rightarrow>* V" and "P \<lesssim> N" and "\<not> diverge M[P <- z]" and "z \<notin> FVars V"
   shows "\<exists>W. val W \<and> M[P <- z] \<rightarrow>* W \<and> b5_prop V W P N z"
-  using assms 
+  using assms
 proof (induction V arbitrary: M rule:val.induct)
   case (1 x)
   then obtain U where U1: "Var x = U[N <- z]" and U2: "M[P <- z] \<rightarrow>* U[P <- z]"
@@ -4017,11 +4126,17 @@ section \<open>B6\<close>
 
 thm val.cases
 
-lemma eval_ctx_beta_inverse: 
-  assumes "eval_ctx hole E" and "E[M <- hole] \<rightarrow> E[N <- hole]"
-  shows "M \<rightarrow> N"
-  using assms
-  sorry
+text \<open>NB: the naive inverse of @{text eval_ctx_beta},
+    @{prop "eval_ctx hole E \<Longrightarrow> E[M <- hole] \<rightarrow> E[N <- hole] \<Longrightarrow> M \<rightarrow> N"},
+  is FALSE (and unused). Counterexample: take the self-looping @{text FixBeta} redex.
+  With @{text "E = App (Fix f x (App (Var f) (Var x))) (Var hole)"} (a valid evaluation context,
+  @{text "hole \<notin> {f,x}"}) we have @{text "E[Zero <- hole] = App (Fix f x (App (Var f) (Var x))) Zero"},
+  which @{text FixBeta}-reduces to @{text "(App (Var f) (Var x))[Zero <- x][Fix f x \<dots> <- f] =
+  App (Fix f x (App (Var f) (Var x))) Zero"}, i.e.\ to itself. Hence
+  @{text "E[Zero <- hole] \<rightarrow> E[Zero <- hole]"} holds while @{text "Zero \<rightarrow> Zero"} does not.
+  The step consumes the whole context as a redex rather than descending into the hole, so no
+  inversion to a hole-local step exists. (Determinism only yields the converse implication when the
+  hole content is itself reducible.)\<close>
 
 lemma stuckEx_are_normal: "stuckEx M \<Longrightarrow> normal M"
 proof(rule ccontr)
@@ -4519,33 +4634,43 @@ proof -
           then show ?thesis using \<open>Q' = App R1 R2\<close> by simp
         qed    
         next
-          case (4 V xy M)
-          have av1: "z \<notin> dset xy" and av2: "FVars N \<inter> dset xy = {}" and av3: "FVars P \<inter> dset xy = {}" sorry
-          then obtain V' M' where q': "Q' = Let xy V' M'" and "V'[N <- z] = V" and "M'[N <- z] = M"
-            using False 4 subst_Let_inversion[of Q' N z xy V M] by blast
-          then consider (A) "V'[P <- z] \<Up>" | (B) "\<exists>W. val W \<and> V'[P <- z] \<rightarrow>* W \<and> b5_prop V W P N z"
-            using 4(2) znN ls betas.refl b5[of V z N V' P] unfolding beta_star_def by auto
+          case (4 V xy0 M0)
+          obtain xy M where LR: "term.Let xy0 V M0 = term.Let xy V M"
+            and avd: "dset xy \<inter> ({z} \<union> FVars N \<union> FVars P) = {}"
+            using Let_refresh[of "{z} \<union> FVars N \<union> FVars P" xy0 V M0] finite_FVars by auto
+          have av1: "z \<notin> dset xy" and av2: "FVars N \<inter> dset xy = {}"
+            and av3: "FVars P \<inter> dset xy = {}" using avd by auto
+          have dP: "dset xy \<inter> FVars P = {}" using av3 by blast
+          have QLet: "Q'[N <- z] = term.Let xy V M" using 4 LR by (metis (no_types))
+          from QLet False av1 av2 obtain V' M' where q': "Q' = term.Let xy V' M'"
+            and vN: "V'[N <- z] = V" and mN: "M'[N <- z] = M"
+            using subst_Let_inversion[of Q' N z xy V M] by blast
+          have QP: "Q'[P <- z] = term.Let xy (V'[P <- z]) (M'[P <- z])"
+            unfolding q' by (rule usubst_Let[OF av1 dP])
+          consider (A) "V'[P <- z] \<Up>" | (B) "\<exists>W. val W \<and> V'[P <- z] \<rightarrow>* W \<and> b5_prop V W P N z"
+            using 4(2) vN znN ls betas.refl b5[of V z N V' P] unfolding beta_star_def by auto
           then show ?thesis
           proof(cases)
             case A
-            obtain thole where "eval_ctx thole (Let xy (Var thole) M'[P <- z])" and *: "thole \<notin> FVars M'[P <- z]" and **: "thole \<notin> dset xy"
-              using eval_ctx.intros(1, 8)
-              using ex_new_if_finite finite_FVars infinite_UNIV
-              sorry
-            moreover have "Q'[P <- z] = (Let xy (Var thole) M'[P <- z]) [V'[P <- z] <- thole]" 
-              using q' * ** av1 av2 av3 usubst_simps(9)[of z xy P V' M'] sorry  (*xy avoids V'*)
-            ultimately show ?thesis using div_ctx A by metis
+            obtain thole :: 'a where th: "thole \<notin> FVars M'[P <- z] \<union> dset xy"
+              by (meson arb_element finite_FVars finite_Un finite_dset)
+            then have thd: "thole \<notin> dset xy" and thM: "thole \<notin> FVars M'[P <- z]" by auto
+            have tctx: "eval_ctx thole (term.Let xy (Var thole) M'[P <- z])"
+              using eval_ctx.intros(1)[of thole] eval_ctx.intros(8)[of thole "Var thole" "M'[P <- z]" xy] thd thM by auto
+            have "Q'[P <- z] = (term.Let xy (Var thole) M'[P <- z]) [V'[P <- z] <- thole]"
+              using QP Let_subst_scrutinee[OF thd thM, of "Var thole" "V'[P <- z]"] by simp
+            then show ?thesis using tctx div_ctx A by metis
           next
             case B
-            then obtain W where "val W" and "V'[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
+            then obtain W where "val W" and sW: "V'[P <- z] \<rightarrow>* W" and "b5_prop V W P N z" by auto
             then have "\<nexists>W1 W2. W = Pair W1 W2" using 4 b5_prop_not_pair[of V] by (metis is_Pair_def)
-            then have "stuckEx (Let xy W M'[P <- z])" using \<open>val W\<close> stuckEx.intros by (auto simp: is_Pair_def)
-            then have "stuck (Let xy W M'[P <- z])"
+            then have "stuckEx (term.Let xy W M'[P <- z])" using \<open>val W\<close> stuckEx.intros by (auto simp: is_Pair_def)
+            then have "stuck (term.Let xy W M'[P <- z])"
               using eval_ctx.intros(1) stuck_def by force
-            then have "getStuck (Let xy V'[P <- z] M'[P <- z])" unfolding getStuck_def
-              using Let_beta_star[of "V'[P <- z]" W xy "M'[P <- z]"] \<open>V'[P <- z] \<rightarrow>* W\<close> 
+            then have gs: "getStuck (term.Let xy (V'[P <- z]) (M'[P <- z]))" unfolding getStuck_def
+              using Let_beta_star[of "V'[P <- z]" W xy "M'[P <- z]"] sW
               unfolding beta_star_def by auto
-            then show ?thesis using \<open>Q' = Let xy V' M'\<close> av1 av2 av3 sorry (*xy avoids V'*)
+            show ?thesis using gs QP by simp
           qed
       next
         case (5 V)
