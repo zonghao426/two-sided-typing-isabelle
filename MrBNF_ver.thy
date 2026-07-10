@@ -361,7 +361,7 @@ lemma term_strong_induct: "\<forall>\<rho>. |K \<rho> :: 'a ::var set| <o |UNIV 
 
 lemma premute_term_usubst: "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV :: 'a ::var set| \<Longrightarrow> id_on (FVars M - {x::'a}) \<sigma> \<Longrightarrow>
   (permute_term \<sigma> M)[V <- \<sigma> x] = M[V <- x]"
-  apply (binder_induction M avoiding: M V x "supp \<sigma>" rule: term_strong_induct)
+  apply (binder_induction M avoiding: M V x "supp \<sigma>" rule: term.strong_induct)
            apply (auto simp: Un_Diff id_on_Un bij_implies_inject)
   apply (smt (verit, best) Diff_iff Diff_insert2 Diff_insert_absorb bij_id_imsupp
       id_on_def in_imsupp not_in_imsupp_same not_in_supp_alt usubst_simps(7))
@@ -374,18 +374,18 @@ lemma premute_term_usubst: "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |U
   done
 
 lemma fresh_usubst[simp]: "x \<notin> FVars t \<Longrightarrow> x \<notin> FVars s \<Longrightarrow> x \<notin> FVars (t[s <- y])"
-  by (binder_induction t avoiding: t s y rule: term_strong_induct)
+  by (binder_induction t avoiding: t s y rule: term.strong_induct)
     (auto simp: Int_Un_distrib)
 
 lemma subst_idle[simp]: "y \<notin> FVars t \<Longrightarrow> t[s <- y] = t"
-  by (binder_induction t avoiding: t s y rule: term_strong_induct) (auto simp: Int_Un_distrib)
+  by (binder_induction t avoiding: t s y rule: term.strong_induct) (auto simp: Int_Un_distrib)
 
 lemma FVars_usubst: "FVars M[N <- z] = FVars M - {z} \<union> (if z \<in> FVars M then FVars N else {})"
   unfolding usubst_def
   by (auto simp: term.Vrs_Sb split: if_splits)
 
 lemma usubst_usubst: "y1 \<noteq> y2 \<Longrightarrow> y1 \<notin> FVars s2 \<Longrightarrow> t[s1 <- y1][s2 <- y2] = t[s2 <- y2][s1[s2 <- y2] <- y1]"
-  apply (binder_induction t avoiding: t y1 y2 s1 s2 rule: term_strong_induct)
+  apply (binder_induction t avoiding: t y1 y2 s1 s2 rule: term.strong_induct)
           apply (auto simp: Int_Un_distrib FVars_usubst split: if_splits)
   apply (subst (1 2) usubst_simps; auto simp: FVars_usubst split: if_splits)
   done
@@ -395,7 +395,7 @@ lemma dsel_dset[simp]: "dfst xy \<in> dset xy" "dsnd xy \<in> dset xy"
 
 lemma premute_term_usubst2: "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV :: 'a ::var set| \<Longrightarrow> id_on (FVars M - {x::'a, y}) \<sigma> \<Longrightarrow> {y, \<sigma> y} \<inter> FVars V = {} \<Longrightarrow>
   (permute_term \<sigma> M)[V <- \<sigma> x][W <- \<sigma> y] = M[V <- x][W <- y]"
-  apply (binder_induction M avoiding: M V W x y "supp \<sigma>" rule: term_strong_induct)
+  apply (binder_induction M avoiding: M V W x y "supp \<sigma>" rule: term.strong_induct)
            apply (auto simp: Un_Diff id_on_Un bij_implies_inject)
   apply (smt (verit, best) Diff_iff Diff_insert2 Diff_insert_absorb bij_id_imsupp
       id_on_def in_imsupp not_in_imsupp_same not_in_supp_alt usubst_simps(7))
@@ -869,7 +869,7 @@ corollary FVars_beta_star: "M \<rightarrow>* N \<Longrightarrow> FVars N \<subse
   using beta_star_def FVars_betas by blast
 
 lemma subst_iden[simp]: "M[Var x <- x] = M"
-  apply(binder_induction M avoiding: x M rule:term_strong_induct)
+  apply(binder_induction M avoiding: x M rule: term_strong_induct)
           apply(auto simp add: Int_Un_distrib)
   done
 
@@ -1907,7 +1907,7 @@ lemma subst_App_inversion:
   obtains R' Q' where "M = App R' Q'" and "R'[t <- x] = R" and "Q'[t <- x] = Q"
   using assms
   apply(atomize_elim)
-  apply(binder_induction M avoiding: M t x rule:term_strong_induct)
+  apply(binder_induction M avoiding: M t x rule: term.strong_induct)
   apply(auto simp add:eval_ctx.intros Int_Un_distrib split:if_splits)
   done
 
