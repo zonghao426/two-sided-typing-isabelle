@@ -6212,7 +6212,7 @@ proof -
     show ?thesis
       unfolding term.inject(6)
       by (rule exI[of _ "g \<leftrightarrow> f"])
-        (use f g xgf False pM idon in \<open>auto simp: infinite_UNIV\<close>)
+        (use f g xgf False pM idon in \<open>auto\<close>)
   qed simp
   then show ?thesis unfolding Lam_def g_def[symmetric] .
 qed
@@ -6254,7 +6254,7 @@ proof -
   have "f \<notin> FVars (M[W <- x])"
     using f by (auto simp: FVars_usubst split: if_splits)
   then show ?thesis
-    using step Lam_eq[of f M x] f by (simp add: subst_idle)
+    using step Lam_eq[of f M x] f by simp
 qed
 
 text \<open>A canonical diverging closed term, the paper's \<open>div\<close>: we use \<open>(fix f(x). f x) 0\<close>.\<close>
@@ -6282,11 +6282,11 @@ proof -
   obtain f' where f1: "f' \<notin> {f, x, g, y}" using fresh_finite[of "{f,x,g,y}"] by auto
   obtain x' where x1: "x' \<notin> {f, x, g, y, f'}" using fresh_finite[of "{f,x,g,y,f'}"] by auto
   have b1: "bij ((x \<leftrightarrow> x') \<circ> (f \<leftrightarrow> f'))" "|supp ((x \<leftrightarrow> x') \<circ> (f \<leftrightarrow> f'))| <o |UNIV::'a set|"
-    by (auto simp: supp_comp_bound infinite_UNIV bij_comp)
+    by (auto simp: supp_comp_bound)
   have v1: "((x \<leftrightarrow> x') \<circ> (f \<leftrightarrow> f')) f = f'" and v2: "((x \<leftrightarrow> x') \<circ> (f \<leftrightarrow> f')) x = x'"
     using fx f1 x1 by auto
   have b2: "bij ((y \<leftrightarrow> x') \<circ> (g \<leftrightarrow> f'))" "|supp ((y \<leftrightarrow> x') \<circ> (g \<leftrightarrow> f'))| <o |UNIV::'a set|"
-    by (auto simp: supp_comp_bound infinite_UNIV bij_comp)
+    by (auto simp: supp_comp_bound)
   have w1: "((y \<leftrightarrow> x') \<circ> (g \<leftrightarrow> f')) g = f'" and w2: "((y \<leftrightarrow> x') \<circ> (g \<leftrightarrow> f')) y = x'"
     using gy f1 x1 by auto
   have e1: "Fix f x (App (Var f) (Var x)) = Fix f' x' (App (Var f') (Var x'))"
@@ -6343,7 +6343,7 @@ proof -
       = App (Fix a b (App (Var a) (Var b))) (V[Fix a b (App (Var a) (Var b)) <- a])"
     using ab by simp
   also have "... = App (Fix a b (App (Var a) (Var b))) V"
-    using assms(2) by (simp add: subst_idle)
+    using assms(2) by simp
   finally show ?thesis using step unfolding o by simp
 qed
 
@@ -6435,7 +6435,7 @@ lemma fixapp0_beta:
   fixes W :: "'a::var term"
   assumes "val W"
   shows "App (fixapp 0 f x M) W \<rightarrow> divt"
-  using Lam_beta[OF assms, of x divt] by (simp add: subst_idle)
+  using Lam_beta[OF assms, of x divt] by simp
 
 
 subsection \<open>The approximation relation\<close>
@@ -6614,7 +6614,7 @@ proof (induction rule: apx.induct)
 next
   case (apx_Pair n M M' N N')
   then show ?case by (auto dest!: val_Pair_D intro: val.intros)
-qed (auto intro: val.intros simp: val_fixapp elim: val.cases num.cases)
+qed (auto intro: val.intros elim: val.cases num.cases)
 
 subsubsection \<open>Inversion lemmas for @{const apx}\<close>
 
@@ -6728,7 +6728,7 @@ proof (binder_induction n B B' avoiding: y V V' rule: apx.strong_induct)
   show ?case
     unfolding subst_idle[OF fF] subst_idle[OF fA]
     using apx_Ax by (blast intro: apx.apx_Ax)
-qed (auto simp: subst_idle usubst_Let intro!: apx.intros)
+qed (auto simp: usubst_Let intro!: apx.intros)
 
 lemma apx_S: "apx (Suc n) M M' \<Longrightarrow> apx n M M'"
   by (erule apx_mono) simp
@@ -6839,7 +6839,7 @@ next
       by (rule eval_ctx.intros(9)[OF eval_ctx.intros(1)]) (use h in auto)
     have "stuck ((If (Var h) N' P')[M' <- h])"
       by (rule stuck_ctx[OF ctx sM']) (use h in auto)
-    then show ?thesis using h by (auto simp: subst_idle)
+    then show ?thesis using h by auto
   qed
 next
   case (apx_App n M M' N N')
@@ -6859,7 +6859,7 @@ next
       by (rule eval_ctx.intros(3)[OF eval_ctx.intros(1)]) (use h in auto)
     have "stuck ((App (Var h) N')[M' <- h])"
       by (rule stuck_ctx[OF ctx sM']) (use h in auto)
-    then show ?thesis using h by (auto simp: subst_idle)
+    then show ?thesis using h by auto
   next
     assume "is_Fix M" and "stuck N"
     then have "is_Fix M'" using apx_is_Fix[OF \<open>apx n M M'\<close>] by simp
@@ -6872,7 +6872,7 @@ next
     have "stuck ((App (Fix g y B) (Var h))[N' <- h])"
       by (rule stuck_ctx[OF ctx sN']) (use h in auto)
     moreover have "(App (Fix g y B) (Var h))[N' <- h] = App (Fix g y B) N'"
-      using h by (auto simp: subst_idle)
+      using h by auto
     ultimately show ?thesis unfolding M'e by simp
   qed
 next
@@ -6887,7 +6887,7 @@ next
       by (rule eval_ctx.intros(6)[OF eval_ctx.intros(1)]) (use h in auto)
     have "stuck ((term.Pair (Var h) N')[M' <- h])"
       by (rule stuck_ctx[OF ctx sM']) (use h in auto)
-    then show ?thesis using h by (auto simp: subst_idle)
+    then show ?thesis using h by auto
   next
     assume "val M" and "stuck N"
     then have vM': "val M'" using apx_val[OF \<open>apx n M M'\<close>] by simp
@@ -6898,7 +6898,7 @@ next
       by (rule eval_ctx.intros(7)[OF vM' eval_ctx.intros(1)]) (use h in auto)
     have "stuck ((term.Pair M' (Var h))[N' <- h])"
       by (rule stuck_ctx[OF ctx sN']) (use h in auto)
-    then show ?thesis using h by (auto simp: subst_idle)
+    then show ?thesis using h by auto
   qed
 next
   case (apx_Let n M M' N N' xy)
@@ -6922,7 +6922,7 @@ next
     have st: "stuck ((term.Let xy' (Var h) N'')[M' <- h])"
       by (rule stuck_ctx[OF ctx sM']) (use h in auto)
     have peq: "(term.Let xy' (Var h) N'')[M' <- h] = term.Let xy' M' N''"
-      using usubst_Let[of h xy' M' "Var h" N''] h d by (auto simp: subst_idle)
+      using usubst_Let[of h xy' M' "Var h" N''] h d by auto
     show ?thesis unfolding eq using st[unfolded peq] .
   qed
 qed
@@ -7690,7 +7690,7 @@ proof (rule ccontr)
       by (rule Lam_eq) (use g in auto)
     have bodyprop: "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow> U \<in> \<lblot>A\<rblot> \<longrightarrow>
       divt[U <- x][Fix g x divt <- g] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
-      by (auto simp: subst_idle divt_diverge)
+      by (auto simp: divt_diverge)
     show ?case unfolding fixapp.simps(1) Le type_semantics.simps
       using bodyprop by blast
   next
@@ -7725,7 +7725,7 @@ proof (rule ccontr)
       by (rule Lam_eq) (use g in auto)
     have bodyprop: "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow>
       divt[U <- x][Fix g x divt <- g] \<in> \<T>\<lblot>B\<rblot> \<longrightarrow> U \<in> \<lblot>A\<rblot>"
-      by (auto simp: subst_idle dest: divt_not_reaches_val)
+      by (auto dest: divt_not_reaches_val)
     show ?case unfolding fixapp.simps(1) Le type_semantics.simps
       using bodyprop by blast
   next
@@ -7756,7 +7756,7 @@ lemma cvs_Cons: "closed_val_subst (p # \<theta>) \<longleftrightarrow>
   by (auto simp: closed_val_subst_def)
 
 lemma eval_closed: "FVars M = {} \<Longrightarrow> eval \<theta> M = M"
-  by (induction \<theta>) (auto simp: eval_Cons subst_idle)
+  by (induction \<theta>) (auto simp: eval_Cons)
 
 lemma eval_Zero[simp]: "eval \<theta> Zero = Zero"
   by (induction \<theta>) (auto simp: eval_Cons)
@@ -7816,7 +7816,7 @@ next
   have "M[V <- y][snd p <- fst p] = M[snd p <- fst p][V[snd p <- fst p] <- y]"
     by (rule usubst_usubst) (use Cons.prems in \<open>auto simp: cvs_Cons\<close>)
   also have "\<dots> = M[snd p <- fst p][V <- y]"
-    using Cons.prems(3) by (simp add: subst_idle)
+    using Cons.prems(3) by simp
   finally show ?case using Cons by (simp add: eval_Cons cvs_Cons)
 qed
 
@@ -7879,7 +7879,7 @@ proof -
     by (meson arb_element finite_FVars finite_UnI)
   have ctx: "eval_ctx h (If (Var h) N P)"
     by (rule eval_ctx.intros(9)[OF eval_ctx.intros(1)]) (use h in auto)
-  show ?thesis using div_ctx[OF ctx d] h by (auto simp: subst_idle)
+  show ?thesis using div_ctx[OF ctx d] h by auto
 qed
 
 lemma div_App1: "diverge A \<Longrightarrow> diverge (App (A::'a::var term) N)"
@@ -7889,7 +7889,7 @@ proof -
     by (meson arb_element finite_FVars finite_UnI)
   have ctx: "eval_ctx h (App (Var h) N)"
     by (rule eval_ctx.intros(3)[OF eval_ctx.intros(1)]) (use h in auto)
-  show ?thesis using div_ctx[OF ctx d] h by (auto simp: subst_idle)
+  show ?thesis using div_ctx[OF ctx d] h by auto
 qed
 
 lemma div_AppFix2: "diverge B \<Longrightarrow> diverge (App (Fix g y R) (B::'a::var term))"
@@ -7900,7 +7900,7 @@ proof -
   have ctx: "eval_ctx h (App (Fix g y R) (Var h))"
     by (rule eval_ctx.intros(2)[OF eval_ctx.intros(1)]) (use h in auto)
   have "(App (Fix g y R) (Var h))[B <- h] = App (Fix g y R) B"
-    using h by (auto simp: subst_idle)
+    using h by auto
   then show ?thesis using div_ctx[OF ctx d] by simp
 qed
 
@@ -7915,7 +7915,7 @@ proof -
   have ctx: "eval_ctx h (term.Let xy' (Var h) N')"
     by (rule eval_ctx.intros(8)[OF eval_ctx.intros(1)]) (use h in auto)
   have peq: "(term.Let xy' (Var h) N')[A <- h] = term.Let xy' A N'"
-    using usubst_Let[of h xy' A "Var h" N'] h dd by (auto simp: subst_idle)
+    using usubst_Let[of h xy' A "Var h" N'] h dd by auto
   show ?thesis unfolding eq using div_ctx[OF ctx d, unfolded peq] .
 qed
 
@@ -8467,7 +8467,7 @@ proof -
     "R[V <- y][Fix g y R <- g] \<rightarrow>* W"
     using App_betas_inv[OF k HOL.refl W(2)] by blast
   have clV: "FVars V = {}" using FVars_beta_star inv(2) clN by auto
-  have "\<not> M \<Up>"
+  have "\<not> (M \<Up>)"
     using inv(1) vals_are_normal val.intros(4) diverge_xor_normalizes
     unfolding normalizes_def by blast
   then have "M \<in> \<T>\<lblot>OnlyTo B A\<rblot>" using M by auto
@@ -8543,7 +8543,7 @@ lemma eval_Cons_Var_same: "FVars V = {} \<Longrightarrow> eval ((v, V) # \<theta
   by (simp add: eval_Cons eval_closed)
 
 lemma eval_Cons_idle: "v \<notin> FVars M \<Longrightarrow> eval ((v, V) # \<theta>) M = eval \<theta> M"
-  by (simp add: eval_Cons subst_idle)
+  by (simp add: eval_Cons)
 
 lemma eval_Cons2_subst:
   fixes M :: "'a::var term"
@@ -8623,8 +8623,6 @@ inductive sjudgement :: "'var::var typing fset \<Rightarrow> 'var::var typing fs
 | sOkPL: "(M :. Nat) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Pred M :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
 | sOkPrL_1: "(M1 :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Pair M1 M2 :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
 | sOkPrL_2: "(M2 :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Pair M1 M2 :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
-
-thm sjudgement.induct
 
 
 subsection \<open>Theorem 4.8: Semantic Soundness\<close>
@@ -9216,7 +9214,7 @@ next
     proof (elim disjE)
       assume MB: "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
       obtain V where V: "eval \<theta> M \<rightarrow>* V" "val V" "V \<in> \<lblot>A\<rblot>" using MA by (rule tau_dest)
-      have "\<not> (eval \<theta> M) \<Up>"
+      have "\<not> ((eval \<theta> M) \<Up>)"
         using V(1,2) vals_are_normal diverge_xor_normalizes normalizes_def by blast
       then have "eval \<theta> M \<in> \<T>\<lblot>B\<rblot>" using MB by auto
       then have "V \<in> \<lblot>B\<rblot>" using tau_unique V(1,2) by blast
@@ -9804,7 +9802,7 @@ proof -
           \<in> \<T>\<lblot>To Nat Nat\<rblot>"
       have vW: "val W" using \<open>W \<in> Vals0\<close> by (simp add: Vals0_def)
       have push1: "(Lam b (App N (Var a)))[W <- a] = Lam b (App N W)"
-        using ba clW clN az bz by (simp add: Lam_usubst subst_idle)
+        using ba clW clN az bz by (simp add: Lam_usubst)
       have push2: "(Lam b (App N W))[Fix g a (Lam b (App N (Var a))) <- g] = Lam b (App N W)"
         by (rule subst_idle) (use g clN clW in auto)
       have memTo: "Lam b (App N W) \<in> \<T>\<lblot>To Nat Nat\<rblot>" using mem unfolding push1 push2 .
@@ -9853,7 +9851,7 @@ proof -
     have Le: "Lam a (Lam b (App divt (Var a))) = Fix g a (Lam b (App divt (Var a)))"
       by (rule Lam_eq) (use g in auto)
     have push1: "(Lam b (App divt (Var a)))[VV <- a] = Lam b (App divt VV)"
-      using ba clVV az bz by (simp add: Lam_usubst subst_idle)
+      using ba clVV az bz by (simp add: Lam_usubst)
     have push2: "(Lam b (App divt VV))[Lam a (Lam b (App divt (Var a))) <- g]
         = Lam b (App divt VV)"
       by (rule subst_idle) (use g clVV in auto)
