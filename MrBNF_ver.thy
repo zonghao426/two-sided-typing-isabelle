@@ -1840,14 +1840,31 @@ fun eval :: "'var::var valuation \<Rightarrow> 'var term \<Rightarrow> 'var term
   "eval Nil M = M"
 | "eval ((x,t) # ps) M = eval ps (M[t <- x])"
 
-inductive typing_semanticsL :: "'var::var valuation \<Rightarrow> 'var typing \<Rightarrow> bool" where
-  "eval \<theta> M \<in> \<T>\<lblot>A\<rblot> \<Longrightarrow> typing_semanticsL \<theta> (M :. A)"
+text \<open>Definition 4.2 (Semantics of Judgements). A valuation is a substitution mapping variables to
+  \<^emph>\<open>closed values\<close> (the proof of the @{text OkVarR} case of Theorem 4.8 requires that \<open>x\<theta>\<close> is a
+  value, and the whole semantics lives on closed terms); it is applied sequentially, which is
+  unproblematic since the images are closed. A valuation satisfies a formula \<open>M : A\<close> on the left
+  if \<open>M\<theta> \<in> \<T>\<lblot>A\<rblot>\<close>, and on the right if \<open>M\<theta> \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>\<close>. It satisfies \<open>\<Gamma>\<close> on the left if it
+  satisfies \<^emph>\<open>every\<close> formula of \<open>\<Gamma>\<close> on the left, and \<open>\<Delta>\<close> on the right if it satisfies \<^emph>\<open>some\<close>
+  formula of \<open>\<Delta>\<close> on the right (the two sides of a sequent are conjunctive resp.\ disjunctive).
+  Following the paper, only valuations that close all the terms involved are considered.\<close>
 
-inductive typing_semanticsR :: "'var::var valuation \<Rightarrow> 'var typing \<Rightarrow> bool" where
-  "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<Longrightarrow> typing_semanticsR \<theta> (M :. A)"
+definition closed_val_subst :: "'var::var valuation \<Rightarrow> bool" where
+  "closed_val_subst \<theta> \<longleftrightarrow> (\<forall>p \<in> set \<theta>. val (snd p) \<and> FVars (snd p) = {})"
 
-inductive semantic_judgement :: "'var::var typing fset \<Rightarrow> 'var typing fset \<Rightarrow> bool" (infix "\<Turnstile>" 10) where
-  "\<forall>\<theta>. (\<forall>\<tau>. \<tau> |\<in>| L \<longrightarrow> typing_semanticsL \<theta> \<tau>) \<longrightarrow> (\<forall>\<tau>. \<tau> |\<in>| R \<longrightarrow> typing_semanticsR \<theta> \<tau>) \<Longrightarrow> L \<Turnstile> R"
+definition satL :: "'var::var valuation \<Rightarrow> 'var typing \<Rightarrow> bool" where
+  "satL \<theta> \<tau> \<longleftrightarrow> eval \<theta> (fst \<tau>) \<in> \<T>\<lblot>snd \<tau>\<rblot>"
+
+definition satR :: "'var::var valuation \<Rightarrow> 'var typing \<Rightarrow> bool" where
+  "satR \<theta> \<tau> \<longleftrightarrow> eval \<theta> (fst \<tau>) \<in> \<T>\<^sub>\<bottom>\<lblot>snd \<tau>\<rblot>"
+
+definition closes :: "'var::var valuation \<Rightarrow> 'var typing fset \<Rightarrow> bool" where
+  "closes \<theta> G \<longleftrightarrow> (\<forall>\<tau>. \<tau> |\<in>| G \<longrightarrow> FVars (eval \<theta> (fst \<tau>)) = {})"
+
+definition semantic_judgement :: "'var::var typing fset \<Rightarrow> 'var typing fset \<Rightarrow> bool"
+  (infix "\<Turnstile>" 10) where
+  "(L \<Turnstile> R) \<longleftrightarrow> (\<forall>\<theta>. closed_val_subst \<theta> \<longrightarrow> closes \<theta> (L |\<union>| R) \<longrightarrow>
+     (\<forall>\<tau>. \<tau> |\<in>| L \<longrightarrow> satL \<theta> \<tau>) \<longrightarrow> (\<exists>\<tau>. \<tau> |\<in>| R \<and> satR \<theta> \<tau>))"
 
 section \<open>B2\<close>
 
@@ -5502,13 +5519,13 @@ proof (induction M rule: measure_induct_rule[where f = "\<lambda>M. count_term z
       have chE: "count_term hole E = 1"
       proof -
         have "count_term hole (E[N <- z]) = count_term hole E"
-          using count_subst[of z hole E N] hz niN by (simp add: count_idle)
+          using count_subst[of z hole E N] hz niN by simp
         then show ?thesis using count_eval_ctx[OF ctxN] by simp
       qed
       have "count_term z M = count_term hole E * 1 + count_term z E"
         unfolding Meq using count_subst[of hole z E "Var z"] hz by simp
       moreover have "count_term z M2 = count_term hole E * 0 + count_term z E"
-        unfolding M2_def using count_subst[of hole z E Nf] hz znNf by (simp add: count_idle)
+        unfolding M2_def using count_subst[of hole z E Nf] hz znNf by simp
       ultimately have cnt: "count_term z M2 < count_term z M" using chE by simp
       have dM2N: "diverge M2[N <- z]" using M2N dNfN by simp
       obtain a where QNfa: "Q \<rightarrow>[a] Nf" using QNf beta_star_def by auto
@@ -5630,7 +5647,7 @@ proof -
   have e2: "(Q0[U <- x])[S <- z] = (Q0[S <- z])[U <- x]"
     using usubst_usubst[OF xz xS, of Q0 U] zU by simp
   have e3: "(Fix f x Q0)[S <- z] = Fix f x (Q0[S <- z])"
-    using fz xz fS xS by (simp add: usubst_simps(7))
+    using fz xz fS xS by simp
   show ?thesis unfolding e1 e2 e3 ..
 qed
 
@@ -6147,7 +6164,7 @@ next
   }
 qed
 
-theorem b7: 
+theorem b7:
   assumes cl: "FVars M[N <- z] = {}" and ls: "Q \<lesssim> N"
   shows "(safe A \<longrightarrow> M[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<longrightarrow> M[Q <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>)
        \<and> (finitely_verifiable A \<longrightarrow> M[N <- z] \<notin> \<T>\<lblot>A\<rblot> \<longrightarrow> M[Q <- z] \<notin> \<T>\<lblot>A\<rblot>)"
@@ -6160,5 +6177,3719 @@ next
   then show ?thesis using subst_idle[of z M] by auto
 qed
 
+section \<open>Fixpoint Approximants (Definition 4.3)\<close>
+
+text \<open>For the second half of Theorem 4.7 (property (S2), Theorem B.8 of the paper) we need
+  fixpoint approximants. These are built from lambda abstractions, which the paper treats as
+  syntactic sugar: \<open>\<lambda>x. M\<close> stands for \<open>fix f(x). M\<close> where \<open>f\<close> is not free in \<open>M\<close>. We first make
+  this precise; up to alpha-equivalence the choice of \<open>f\<close> does not matter.\<close>
+
+lemma fresh_finite: "finite (A :: 'a::var set) \<Longrightarrow> \<exists>f. f \<notin> A"
+  by (rule exists_fresh, rule finite_ordLess_infinite2[OF _ infinite_UNIV])
+
+definition Lam :: "'a::var \<Rightarrow> 'a term \<Rightarrow> 'a term" where
+  "Lam x M = Fix (SOME f. f \<notin> FVars M \<and> f \<noteq> x) x M"
+
+lemma Lam_eq:
+  fixes M :: "'a::var term"
+  assumes f: "f \<notin> FVars M" "f \<noteq> x"
+  shows "Lam x M = Fix f x M"
+proof -
+  define g where "g = (SOME f. f \<notin> FVars M \<and> f \<noteq> x)"
+  have ex: "\<exists>f. f \<notin> FVars M \<and> f \<noteq> x"
+    using fresh_finite[of "FVars M \<union> {x}"] by auto
+  have g: "g \<notin> FVars M" "g \<noteq> x"
+    using someI_ex[OF ex] unfolding g_def by auto
+  have "Fix g x M = Fix f x M"
+  proof (cases "g = f")
+    case False
+    have pM: "permute_term (g \<leftrightarrow> f) M = M"
+      by (rule term.permute_cong_id[OF bij_swap supp_swap_bound[OF infinite_UNIV]])
+        (use f g in \<open>auto simp: swap_def\<close>)
+    have idon: "id_on (FVars M - {x, g}) (g \<leftrightarrow> f)"
+      unfolding id_on_def using f g by (auto simp: swap_def)
+    have xgf: "x \<noteq> g" "x \<noteq> f" using f g by auto
+    show ?thesis
+      unfolding term.inject(6)
+      by (rule exI[of _ "g \<leftrightarrow> f"])
+        (use f g xgf False pM idon in \<open>auto simp: infinite_UNIV\<close>)
+  qed simp
+  then show ?thesis unfolding Lam_def g_def[symmetric] .
+qed
+
+lemma val_Lam[simp]: "val (Lam x M)"
+  unfolding Lam_def by (rule val.intros(4))
+
+lemma FVars_Lam[simp]: "FVars (Lam x M) = FVars M - {x}"
+proof -
+  obtain f where f: "f \<notin> FVars M" "f \<noteq> x"
+    using fresh_finite[of "FVars M \<union> {x}"] by auto
+  show ?thesis unfolding Lam_eq[OF f] using f by auto
+qed
+
+lemma Lam_permute:
+  fixes \<sigma> :: "'a::var \<Rightarrow> 'a"
+  assumes b: "bij \<sigma>" and s: "|supp \<sigma>| <o |UNIV::'a set|"
+  shows "permute_term \<sigma> (Lam x M) = Lam (\<sigma> x) (permute_term \<sigma> M)"
+proof -
+  obtain f where f: "f \<notin> FVars M" "f \<noteq> x"
+    using fresh_finite[of "FVars M \<union> {x}"] by auto
+  have "permute_term \<sigma> (Lam x M) = Fix (\<sigma> f) (\<sigma> x) (permute_term \<sigma> M)"
+    unfolding Lam_eq[OF f] by (simp add: term.permute(7)[OF b s])
+  also have "... = Lam (\<sigma> x) (permute_term \<sigma> M)"
+    by (rule Lam_eq[symmetric])
+      (use f b s in \<open>auto simp: term.FVars_permute[OF b s] bij_implies_inject\<close>)
+  finally show ?thesis .
+qed
+
+lemma Lam_beta:
+  fixes W :: "'a::var term"
+  assumes "val W"
+  shows "App (Lam x M) W \<rightarrow> M[W <- x]"
+proof -
+  obtain f where f: "f \<notin> FVars M \<union> FVars W \<union> {x}"
+    using fresh_finite[of "FVars M \<union> FVars W \<union> {x}"] by auto
+  have step: "App (Fix f x M) W \<rightarrow> M[W <- x][Fix f x M <- f]"
+    by (rule beta.FixBeta) (use assms f in auto)
+  have "f \<notin> FVars (M[W <- x])"
+    using f by (auto simp: FVars_usubst split: if_splits)
+  then show ?thesis
+    using step Lam_eq[of f M x] f by (simp add: subst_idle)
+qed
+
+text \<open>A canonical diverging closed term, the paper's \<open>div\<close>: we use \<open>(fix f(x). f x) 0\<close>.\<close>
+
+definition omega :: "'a::var term" where
+  "omega = (SOME W. \<exists>f x. f \<noteq> x \<and> W = Fix f x (App (Var f) (Var x)))"
+
+lemma Fix_selfapp_permute:
+  fixes h :: "'a::var \<Rightarrow> 'a"
+  assumes h: "bij h" "|supp h| <o |UNIV::'a set|"
+  shows "Fix a b (App (Var a) (Var b)) = Fix (h a) (h b) (App (Var (h a)) (Var (h b)))"
+proof -
+  have "Fix a b (App (Var a) (Var b)) = permute_term h (Fix a b (App (Var a) (Var b)))"
+    by (rule term.permute_cong_id[OF h, symmetric]) auto
+  also have "... = Fix (h a) (h b) (App (Var (h a)) (Var (h b)))"
+    by (simp add: term.permute[OF h])
+  finally show ?thesis .
+qed
+
+lemma Fix_selfapp_alpha:
+  fixes f x g y :: "'a::var"
+  assumes fx: "f \<noteq> x" and gy: "g \<noteq> y"
+  shows "Fix f x (App (Var f) (Var x)) = Fix g y (App (Var g) (Var y))"
+proof -
+  obtain f' where f1: "f' \<notin> {f, x, g, y}" using fresh_finite[of "{f,x,g,y}"] by auto
+  obtain x' where x1: "x' \<notin> {f, x, g, y, f'}" using fresh_finite[of "{f,x,g,y,f'}"] by auto
+  have b1: "bij ((x \<leftrightarrow> x') \<circ> (f \<leftrightarrow> f'))" "|supp ((x \<leftrightarrow> x') \<circ> (f \<leftrightarrow> f'))| <o |UNIV::'a set|"
+    by (auto simp: supp_comp_bound infinite_UNIV bij_comp)
+  have v1: "((x \<leftrightarrow> x') \<circ> (f \<leftrightarrow> f')) f = f'" and v2: "((x \<leftrightarrow> x') \<circ> (f \<leftrightarrow> f')) x = x'"
+    using fx f1 x1 by auto
+  have b2: "bij ((y \<leftrightarrow> x') \<circ> (g \<leftrightarrow> f'))" "|supp ((y \<leftrightarrow> x') \<circ> (g \<leftrightarrow> f'))| <o |UNIV::'a set|"
+    by (auto simp: supp_comp_bound infinite_UNIV bij_comp)
+  have w1: "((y \<leftrightarrow> x') \<circ> (g \<leftrightarrow> f')) g = f'" and w2: "((y \<leftrightarrow> x') \<circ> (g \<leftrightarrow> f')) y = x'"
+    using gy f1 x1 by auto
+  have e1: "Fix f x (App (Var f) (Var x)) = Fix f' x' (App (Var f') (Var x'))"
+    using Fix_selfapp_permute[OF b1, of f x] unfolding v1 v2 .
+  have e2: "Fix g y (App (Var g) (Var y)) = Fix f' x' (App (Var f') (Var x'))"
+    using Fix_selfapp_permute[OF b2, of g y] unfolding w1 w2 .
+  show ?thesis by (rule trans[OF e1 e2[symmetric]])
+qed
+
+lemma omega_eq:
+  fixes f x :: "'a::var"
+  assumes "f \<noteq> x"
+  shows "omega = Fix f x (App (Var f) (Var x))"
+proof -
+  have ex: "\<exists>W::'a term. \<exists>g y. g \<noteq> y \<and> W = Fix g y (App (Var g) (Var y))"
+    using assms by blast
+  show ?thesis
+    unfolding omega_def
+    by (rule someI2_ex[OF ex]) (use assms in \<open>blast intro: Fix_selfapp_alpha\<close>)
+qed
+
+lemma ex_two_distinct: "\<exists>a b :: 'a::var. a \<noteq> b"
+proof -
+  obtain b where "(b::'a) \<notin> {undefined}" using fresh_finite[of "{undefined}"] by auto
+  then show ?thesis by auto
+qed
+
+lemma val_omega[simp]: "val (omega :: 'a::var term)"
+proof -
+  obtain a b :: 'a where "a \<noteq> b" using ex_two_distinct by auto
+  show ?thesis unfolding omega_eq[OF \<open>a \<noteq> b\<close>] by (rule val.intros(4))
+qed
+
+lemma FVars_omega[simp]: "FVars (omega :: 'a::var term) = {}"
+proof -
+  obtain a b :: 'a where "a \<noteq> b" using ex_two_distinct by auto
+  then show ?thesis unfolding omega_eq[OF \<open>a \<noteq> b\<close>] by auto
+qed
+
+definition divt :: "'a::var term" where
+  "divt = App omega Zero"
+
+lemma omega_selfstep:
+  fixes V :: "'a::var term"
+  assumes "val V" and "FVars V = {}"
+  shows "App omega V \<rightarrow> App omega V"
+proof -
+  obtain a b :: 'a where ab: "a \<noteq> b" using ex_two_distinct by auto
+  have o: "omega = Fix a b (App (Var a) (Var b))" by (rule omega_eq[OF ab])
+  have step: "App (Fix a b (App (Var a) (Var b))) V
+      \<rightarrow> (App (Var a) (Var b))[V <- b][Fix a b (App (Var a) (Var b)) <- a]"
+    by (rule beta.FixBeta) (use assms in auto)
+  have "(App (Var a) (Var b))[V <- b][Fix a b (App (Var a) (Var b)) <- a]
+      = App (Fix a b (App (Var a) (Var b))) (V[Fix a b (App (Var a) (Var b)) <- a])"
+    using ab by simp
+  also have "... = App (Fix a b (App (Var a) (Var b))) V"
+    using assms(2) by (simp add: subst_idle)
+  finally show ?thesis using step unfolding o by simp
+qed
+
+lemma divt_step: "(divt :: 'a::var term) \<rightarrow> divt"
+  unfolding divt_def by (rule omega_selfstep) (auto intro: val.intros num.intros)
+
+lemma divt_diverge: "(divt :: 'a::var term) \<Up>"
+  apply (rule diverge.coinduct[of "\<lambda>M. M = divt"])
+   apply simp
+  by (metis divt_step)
+
+lemma FVars_divt[simp]: "FVars (divt :: 'a::var term) = {}"
+  unfolding divt_def by auto
+
+lemma divt_permute[simp]:
+  fixes \<sigma> :: "'a::var \<Rightarrow> 'a"
+  assumes "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|"
+  shows "permute_term \<sigma> (divt :: 'a term) = divt"
+  by (rule term.permute_cong_id[OF assms]) auto
+
+lemma divt_not_normalizes: "\<not> normalizes (divt :: 'a::var term)"
+  using divt_diverge diverge_xor_normalizes by blast
+
+lemma divt_in_taubot: "(divt :: 'a::var term) \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+  using divt_diverge by auto
+
+lemma divt_notin_tau: "(divt :: 'a::var term) \<notin> \<T>\<lblot>A\<rblot>"
+proof
+  assume "(divt :: 'a term) \<in> \<T>\<lblot>A\<rblot>"
+  then obtain V where "divt \<rightarrow>* (V :: 'a term)" "val V" by auto
+  then show False
+    using divt_not_normalizes vals_are_normal unfolding normalizes_def by blast
+qed
+
+text \<open>The fixpoint approximants themselves (Definition 4.3):
+  \<open>fix\<^sup>0 f(x). M = \<lambda>x. div\<close> and \<open>fix\<^sup>n\<^sup>+\<^sup>1 f(x). M = \<lambda>x. M[fix\<^sup>n f(x). M / f]\<close>.\<close>
+
+primrec fixapp :: "nat \<Rightarrow> 'a::var \<Rightarrow> 'a \<Rightarrow> 'a term \<Rightarrow> 'a term" where
+  "fixapp 0 f x M = Lam x divt"
+| "fixapp (Suc n) f x M = Lam x (M[fixapp n f x M <- f])"
+
+lemma FVars_fixapp: "FVars (fixapp n f x M) \<subseteq> FVars M - {f, x}"
+  by (induction n) (auto simp: FVars_usubst split: if_splits)
+
+lemma val_fixapp[simp]: "val (fixapp n f x M)"
+  by (cases n) auto
+
+lemma fixapp_permute:
+  fixes \<sigma> :: "'a::var \<Rightarrow> 'a"
+  assumes b: "bij \<sigma>" and s: "|supp \<sigma>| <o |UNIV::'a set|"
+  shows "permute_term \<sigma> (fixapp n f x M) = fixapp n (\<sigma> f) (\<sigma> x) (permute_term \<sigma> M)"
+  by (induction n)
+    (auto simp: Lam_permute[OF assms] permute_usubst[OF assms] divt_permute[OF assms])
+
+lemma fixapp_cong:
+  fixes M :: "'a::var term"
+  assumes "Fix f x M = Fix f' x' M'"
+  shows "fixapp n f x M = fixapp n f' x' M'"
+proof -
+  obtain \<sigma> where \<sigma>: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|" "id_on (FVars M - {x, f}) \<sigma>"
+    "\<sigma> f = f'" "\<sigma> x = x'" "permute_term \<sigma> M = M'"
+    using assms[unfolded term.inject(6)] by auto
+  have "fixapp n f' x' M' = permute_term \<sigma> (fixapp n f x M)"
+    by (simp add: fixapp_permute[OF \<sigma>(1,2)] \<sigma>(4,5,6))
+  also have "permute_term \<sigma> (fixapp n f x M) = fixapp n f x M"
+    by (rule term.permute_cong_id[OF \<sigma>(1,2)])
+      (use FVars_fixapp[of n f x M] \<sigma>(3) in \<open>auto simp: id_on_def\<close>)
+  finally show ?thesis by simp
+qed
+
+lemma fixapp_beta:
+  fixes W :: "'a::var term"
+  assumes "val W" and "f \<noteq> x" and "f \<notin> FVars W"
+  shows "App (fixapp (Suc n) f x M) W \<rightarrow> M[W <- x][fixapp n f x M <- f]"
+proof -
+  have step: "App (Lam x (M[fixapp n f x M <- f])) W \<rightarrow> M[fixapp n f x M <- f][W <- x]"
+    by (rule Lam_beta[OF assms(1)])
+  have x_fresh: "x \<notin> FVars (fixapp n f x M)"
+    using FVars_fixapp[of n f x M] by auto
+  have "M[fixapp n f x M <- f][W <- x] = M[W <- x][(fixapp n f x M)[W <- x] <- f]"
+    by (rule usubst_usubst[OF assms(2,3)])
+  also have "... = M[W <- x][fixapp n f x M <- f]"
+    unfolding subst_idle[OF x_fresh] ..
+  finally have eq: "M[fixapp n f x M <- f][W <- x] = M[W <- x][fixapp n f x M <- f]" .
+  show ?thesis using step unfolding fixapp.simps(2) eq .
+qed
+
+lemma fixapp0_beta:
+  fixes W :: "'a::var term"
+  assumes "val W"
+  shows "App (fixapp 0 f x M) W \<rightarrow> divt"
+  using Lam_beta[OF assms, of x divt] by (simp add: subst_idle)
+
+
+subsection \<open>The approximation relation\<close>
+
+text \<open>\<open>apx n P Q\<close> holds when \<open>Q\<close> is obtained from \<open>P\<close> by replacing some closed fixpoint
+  subterms \<open>fix f(x). M\<close> of \<open>P\<close> by approximants \<open>fix\<^sup>k f(x). M\<close> with \<open>k \<ge> n\<close>. This makes precise
+  the paper's informal talk (proof of Theorem B.8) of "replacing all descendants of occurrences of
+  \<open>fix f(x). M\<close> by holes": different residuals of a fixpoint may have been unfolded a different
+  number of times, so a single uniform index does not survive reduction, but a lower bound does.\<close>
+
+inductive apx :: "nat \<Rightarrow> 'a::var term \<Rightarrow> 'a term \<Rightarrow> bool" where
+  apx_Zero: "apx n Zero Zero"
+| apx_Var: "apx n (Var v) (Var v)"
+| apx_Succ: "apx n M M' \<Longrightarrow> apx n (Succ M) (Succ M')"
+| apx_Pred: "apx n M M' \<Longrightarrow> apx n (Pred M) (Pred M')"
+| apx_If: "apx n M M' \<Longrightarrow> apx n N N' \<Longrightarrow> apx n P P' \<Longrightarrow> apx n (If M N P) (If M' N' P')"
+| apx_App: "apx n M M' \<Longrightarrow> apx n N N' \<Longrightarrow> apx n (App M N) (App M' N')"
+| apx_Pair: "apx n M M' \<Longrightarrow> apx n N N' \<Longrightarrow> apx n (Pair M N) (Pair M' N')"
+| apx_Fix: "apx n M M' \<Longrightarrow> apx n (Fix f x M) (Fix f x M')"
+| apx_Let: "apx n M M' \<Longrightarrow> apx n N N' \<Longrightarrow> apx n (Let xy M N) (Let xy M' N')"
+| apx_Ax: "FVars M \<subseteq> {f, x} \<Longrightarrow> f \<noteq> x \<Longrightarrow> n \<le> k \<Longrightarrow> apx n (Fix f x M) (fixapp k f x M)"
+
+lemmas [equiv] = Lam_permute divt_permute fixapp_permute
+
+text \<open>Equivariance is discharged automatically thanks to the \<open>equiv\<close> registrations above.
+  Refreshability: the seven non-binding rules take \<open>B' = {}\<close>; the two congruence rules rename the
+  binders freshly on both sides simultaneously (using the equivariance of the induction relation
+  \<open>R\<close>, which the obligation provides), and the approximant rule additionally transports the
+  approximant along the renaming via @{thm fixapp_cong}.\<close>
+binder_inductive apx
+  subgoal premises prems for R B n P Q
+  proof -
+    from prems(3) show ?thesis
+    proof (elim disjE exE conjE, goal_cases)
+      case (1 n') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (2 n' v) then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (3 n' M M') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (4 n' M M') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (5 n' M M' N N' P' P'') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (6 n' M M' N N') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (7 n' M M' N N') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (8 n' M M' f x)
+      have b1: "|{f, x}| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+      have b2: "|{f, x} \<union> FVars M \<union> FVars M'| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+      obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+          "g ` {f, x} \<inter> ({f, x} \<union> FVars M \<union> FVars M') = {}"
+          "id_on ((FVars M \<union> FVars M') - {x, f}) g" "g \<circ> g = id"
+        using eextend_fresh[OF b1 b2 infinite_UNIV, of "(FVars M \<union> FVars M') - {x, f}"]
+        by (auto simp: insert_commute)
+      have idM: "id_on (FVars M - {x, f}) g" and idM': "id_on (FVars M' - {x, f}) g"
+        using g(4) by (auto simp: id_on_def)
+      have eqM: "Fix f x M = Fix (g f) (g x) (permute_term g M)"
+        using g(1,2) idM by (auto intro!: exI[of _ g])
+      have eqM': "Fix f x M' = Fix (g f) (g x) (permute_term g M')"
+        using g(1,2) idM' by (auto intro!: exI[of _ g])
+      have Rg: "R n' (permute_term g M) (permute_term g M')"
+        using prems(2)[OF g(1,2) 8(5)] by simp
+      show ?case
+        apply (rule exI[of _ "{g f, g x}"])
+        apply (rule conjI)
+        subgoal using g(3) unfolding 8(3,4) by auto
+        subgoal
+          apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2,
+              rule disjI2, rule disjI1)
+          apply (rule exI[of _ n'], rule exI[of _ "permute_term g M"],
+              rule exI[of _ "permute_term g M'"], rule exI[of _ "g f"], rule exI[of _ "g x"])
+          using 8(2,3,4) eqM eqM' Rg by auto
+        done
+    next
+      case (9 n' M M' N N' xy)
+      have b1: "|dset xy| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF finite_dset infinite_UNIV])
+      have b2: "|dset xy \<union> FVars N \<union> FVars N' \<union> FVars M \<union> FVars M'| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) (simp add: finite_dset)
+      obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+          "g ` dset xy \<inter> (dset xy \<union> FVars N \<union> FVars N' \<union> FVars M \<union> FVars M') = {}"
+          "id_on ((FVars N \<union> FVars N') - dset xy) g" "g \<circ> g = id"
+        using eextend_fresh[OF b1 b2 infinite_UNIV, of "(FVars N \<union> FVars N') - dset xy"]
+        by (auto simp: insert_commute)
+      have idN: "id_on (FVars N - dset xy) g" and idN': "id_on (FVars N' - dset xy) g"
+        using g(4) by (auto simp: id_on_def)
+      have eqN: "term.Let xy M N = term.Let (dmap g xy) M (permute_term g N)"
+        using g(1,2) idN by (auto intro!: exI[of _ g])
+      have eqN': "term.Let xy M' N' = term.Let (dmap g xy) M' (permute_term g N')"
+        using g(1,2) idN' by (auto intro!: exI[of _ g])
+      have Rg: "R n' (permute_term g N) (permute_term g N')"
+        using prems(2)[OF g(1,2) 9(6)] by simp
+      show ?case
+        apply (rule exI[of _ "dset (dmap g xy)"])
+        apply (rule conjI)
+        subgoal using g(3) unfolding 9(3,4) by (auto simp: dpair.set_map[OF g(1,2)])
+        subgoal
+          apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2,
+              rule disjI2, rule disjI2, rule disjI1)
+          apply (rule exI[of _ n'], rule exI[of _ M], rule exI[of _ M'],
+              rule exI[of _ "permute_term g N"], rule exI[of _ "permute_term g N'"],
+              rule exI[of _ "dmap g xy"])
+          using 9(2,3,4,5) eqN eqN' Rg by auto
+        done
+    next
+      case (10 M f x n' k)
+      have b1: "|{f, x}| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+      have b2: "|{f, x} \<union> FVars M| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+      obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+          "g ` {f, x} \<inter> ({f, x} \<union> FVars M) = {}"
+          "id_on (FVars M - {x, f}) g" "g \<circ> g = id"
+        using eextend_fresh[OF b1 b2 infinite_UNIV, of "FVars M - {x, f}"]
+        by (auto simp: insert_commute)
+      have eqM: "Fix f x M = Fix (g f) (g x) (permute_term g M)"
+        using g(1,2,4) by (auto intro!: exI[of _ g])
+      have eqF: "fixapp k f x M = fixapp k (g f) (g x) (permute_term g M)"
+        by (rule fixapp_cong[OF eqM])
+      have sub: "FVars (permute_term g M) \<subseteq> {g f, g x}"
+        using 10(5) by (auto simp: term.FVars_permute[OF g(1,2)])
+      have neq: "g f \<noteq> g x"
+        using 10(6) g(1) by (simp add: bij_implies_inject)
+      have fvP: "FVars P = {}" and fvQ: "FVars Q = {}"
+        using 10(3,4,5) FVars_fixapp[of k f x M] by auto
+      show ?case
+        apply (rule exI[of _ "{g f, g x}"])
+        apply (rule conjI)
+        subgoal unfolding fvP fvQ by auto
+        subgoal
+          apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2,
+              rule disjI2, rule disjI2, rule disjI2)
+          apply (rule exI[of _ "permute_term g M"], rule exI[of _ "g f"], rule exI[of _ "g x"],
+              rule exI[of _ n'], rule exI[of _ k])
+          using 10(2,3,4,7) eqM eqF sub neq by auto
+        done
+    qed
+  qed
+  done
+
+thm apx.strong_induct apx.equiv apx.cases
+
+lemma apx_refl: "apx n M M"
+  by (induction M) (auto intro: apx.intros)
+
+lemma apx_mono:
+  assumes "apx n M M'" and "m \<le> n"
+  shows "apx m M M'"
+  using assms by (induction n M M' arbitrary: m rule: apx.induct) (auto intro: apx.intros)
+
+lemma apx_FVars: "apx n M M' \<Longrightarrow> FVars M' = FVars M"
+  by (induction rule: apx.induct) (auto dest: subsetD[OF FVars_fixapp])
+
+lemma not_num_Lam: "\<not> num (Lam x M)"
+  unfolding Lam_def by (auto elim: num.cases)
+
+lemma not_num_fixapp: "\<not> num (fixapp k f x M)"
+  by (cases k) (auto simp: not_num_Lam)
+
+lemma apx_num: "apx n M M' \<Longrightarrow> num M \<longleftrightarrow> num M'"
+proof (induction rule: apx.induct)
+  case (apx_Succ n M M')
+  then show ?case by (auto elim: num.cases intro: num.intros)
+qed (auto elim: num.cases simp: not_num_fixapp)
+
+lemma apx_val: "apx n M M' \<Longrightarrow> val M \<longleftrightarrow> val M'"
+proof (induction rule: apx.induct)
+  case (apx_Succ n M M')
+  then show ?case
+    using apx_num[OF apx.apx_Succ[OF apx_Succ(1)]]
+    by (auto dest!: val_Succ_num intro: val.intros num.intros elim: num.cases)
+next
+  case (apx_Pair n M M' N N')
+  then show ?case by (auto dest!: val_Pair_D intro: val.intros)
+qed (auto intro: val.intros simp: val_fixapp elim: val.cases num.cases)
+
+subsubsection \<open>Inversion lemmas for @{const apx}\<close>
+
+lemma apx_Zero_inv: "apx n Zero Q \<Longrightarrow> Q = Zero"
+  by (erule apx.cases) auto
+
+lemma apx_Var_inv: "apx n (Var v) Q \<Longrightarrow> Q = Var v"
+  by (erule apx.cases) auto
+
+lemma apx_Succ_inv: "apx n (Succ M) Q \<Longrightarrow> \<exists>M'. Q = Succ M' \<and> apx n M M'"
+  by (erule apx.cases) auto
+
+lemma apx_Pred_inv: "apx n (Pred M) Q \<Longrightarrow> \<exists>M'. Q = Pred M' \<and> apx n M M'"
+  by (erule apx.cases) auto
+
+lemma apx_If_inv:
+  "apx n (If M N P) Q \<Longrightarrow> \<exists>M' N' P'. Q = If M' N' P' \<and> apx n M M' \<and> apx n N N' \<and> apx n P P'"
+  by (erule apx.cases) auto
+
+lemma apx_App_inv: "apx n (App M N) Q \<Longrightarrow> \<exists>M' N'. Q = App M' N' \<and> apx n M M' \<and> apx n N N'"
+  by (erule apx.cases) auto
+
+lemma apx_Pair_inv:
+  "apx n (term.Pair M N) Q \<Longrightarrow> \<exists>M' N'. Q = term.Pair M' N' \<and> apx n M M' \<and> apx n N N'"
+  by (erule apx.cases) auto
+
+text \<open>The two binding constructors admit inversion with the \<^emph>\<open>given\<close> binder on the congruence
+  side: the derivation may use an alpha-variant representation, but equivariance of @{const apx}
+  lets us transport the body relation back along the alpha-witness.\<close>
+
+lemma apx_Fix_inv:
+  fixes M :: "'a::var term"
+  assumes "apx n (Fix f x M) Q"
+  shows "(\<exists>M'. Q = Fix f x M' \<and> apx n M M') \<or>
+         (\<exists>g y R k. Fix f x M = Fix g y R \<and> FVars R \<subseteq> {g, y} \<and> g \<noteq> y \<and> n \<le> k \<and>
+            Q = fixapp k g y R)"
+  using assms
+proof (cases rule: apx.cases)
+  case (apx_Fix M0 M0' f0 x0)
+  note Feq = apx_Fix(1) and Qeq = apx_Fix(2) and rel = apx_Fix(3)
+  obtain \<sigma> where \<sigma>: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|" "id_on (FVars M - {x, f}) \<sigma>"
+    "\<sigma> f = f0" "\<sigma> x = x0" "permute_term \<sigma> M = M0"
+    using Feq[unfolded term.inject(6)] by auto
+  have i\<sigma>: "bij (inv \<sigma>)" "|supp (inv \<sigma>)| <o |UNIV::'a set|"
+    using \<sigma>(1,2) by (auto simp: supp_inv_bound)
+  define M' where "M' = permute_term (inv \<sigma>) M0'"
+  have "apx n (permute_term (inv \<sigma>) M0) (permute_term (inv \<sigma>) M0')"
+    by (rule apx.equiv[OF i\<sigma> rel])
+  then have MM': "apx n M M'"
+    unfolding M'_def \<sigma>(6)[symmetric] permute_term_inv_cancel[OF \<sigma>(1,2)] .
+  have fvM': "FVars M' = FVars M"
+    unfolding M'_def term.FVars_permute[OF i\<sigma>]
+    unfolding apx_FVars[OF rel] \<sigma>(6)[symmetric] term.FVars_permute[OF \<sigma>(1,2)]
+    by (simp add: image_inv_f_f[OF bij_is_inj[OF \<sigma>(1)]])
+  have pM': "permute_term \<sigma> M' = M0'"
+    unfolding M'_def
+    using permute_term_inv_cancel[OF i\<sigma>, of M0'] inv_inv_eq[OF \<sigma>(1)] by simp
+  have "Fix f x M' = Fix (\<sigma> f) (\<sigma> x) (permute_term \<sigma> M')"
+    using \<sigma>(1,2) \<sigma>(3)[folded fvM'] by (auto intro!: exI[of _ \<sigma>])
+  then have "Q = Fix f x M'"
+    unfolding \<sigma>(4,5) pM' Qeq[symmetric] by (rule sym)
+  then show ?thesis using MM' by blast
+next
+  case (apx_Ax M0 f0 x0 k)
+  then show ?thesis by blast
+qed auto
+
+lemma apx_Let_inv:
+  fixes M N :: "'a::var term"
+  assumes "apx n (term.Let xy M N) Q"
+  shows "\<exists>M' N'. Q = term.Let xy M' N' \<and> apx n M M' \<and> apx n N N'"
+  using assms
+proof (cases rule: apx.cases)
+  case (apx_Let M0 M0' N0 N0' xy0)
+  note Leq = apx_Let(1) and Qeq = apx_Let(2) and relM = apx_Let(3) and relN = apx_Let(4)
+  have M0: "M0 = M"
+    using Leq unfolding term.inject(8) by auto
+  obtain \<sigma> where \<sigma>: "bij \<sigma>" "|supp \<sigma>| <o |UNIV::'a set|" "id_on (FVars N - dset xy) \<sigma>"
+    "dmap \<sigma> xy = xy0" "permute_term \<sigma> N = N0"
+    using Leq[unfolded term.inject(8)] by auto
+  have i\<sigma>: "bij (inv \<sigma>)" "|supp (inv \<sigma>)| <o |UNIV::'a set|"
+    using \<sigma>(1,2) by (auto simp: supp_inv_bound)
+  define N' where "N' = permute_term (inv \<sigma>) N0'"
+  have "apx n (permute_term (inv \<sigma>) N0) (permute_term (inv \<sigma>) N0')"
+    by (rule apx.equiv[OF i\<sigma> relN])
+  then have NN': "apx n N N'"
+    unfolding N'_def \<sigma>(5)[symmetric] permute_term_inv_cancel[OF \<sigma>(1,2)] .
+  have fvN': "FVars N' = FVars N"
+    unfolding N'_def term.FVars_permute[OF i\<sigma>]
+    unfolding apx_FVars[OF relN] \<sigma>(5)[symmetric] term.FVars_permute[OF \<sigma>(1,2)]
+    by (simp add: image_inv_f_f[OF bij_is_inj[OF \<sigma>(1)]])
+  have pN': "permute_term \<sigma> N' = N0'"
+    unfolding N'_def
+    using permute_term_inv_cancel[OF i\<sigma>, of N0'] inv_inv_eq[OF \<sigma>(1)] by simp
+  have "term.Let xy M0' N' = term.Let (dmap \<sigma> xy) M0' (permute_term \<sigma> N')"
+    using \<sigma>(1,2) \<sigma>(3)[folded fvN'] by (auto intro!: exI[of _ \<sigma>])
+  then have "Q = term.Let xy M0' N'"
+    unfolding \<sigma>(4) pN' Qeq[symmetric] by (rule sym)
+  then show ?thesis using relM NN' M0 by blast
+qed auto
+
+subsubsection \<open>Substitution of closed approximated values\<close>
+
+lemma apx_usubst:
+  fixes V V' :: "'a::var term"
+  shows "apx n B B' \<Longrightarrow> apx n V V' \<Longrightarrow> FVars V = {} \<Longrightarrow> apx n (B[V <- y]) (B'[V' <- y])"
+proof (binder_induction n B B' avoiding: y V V' rule: apx.strong_induct)
+  case (apx_Ax M f x n k)
+  have fF: "y \<notin> FVars (Fix f x M)" and fA: "y \<notin> FVars (fixapp k f x M)"
+    using apx_Ax FVars_fixapp[of k f x M] by auto
+  show ?case
+    unfolding subst_idle[OF fF] subst_idle[OF fA]
+    using apx_Ax by (blast intro: apx.apx_Ax)
+qed (auto simp: subst_idle usubst_Let intro!: apx.intros)
+
+lemma apx_S: "apx (Suc n) M M' \<Longrightarrow> apx n M M'"
+  by (erule apx_mono) simp
+
+lemma is_Fix_Fix[simp]: "is_Fix (Fix f x M)"
+  unfolding is_Fix_def by blast
+
+lemma is_Fix_neg[simp]:
+  "\<not> is_Fix Zero" "\<not> is_Fix (Var v)" "\<not> is_Fix (Succ M)" "\<not> is_Fix (Pred M)"
+  "\<not> is_Fix (If M N P)" "\<not> is_Fix (App M N)" "\<not> is_Fix (term.Pair M N)"
+  "\<not> is_Fix (term.Let xy M N)"
+  unfolding is_Fix_def by auto
+
+lemma is_Pair_Pair[simp]: "is_Pair (term.Pair M N)"
+  unfolding is_Pair_def by blast
+
+lemma is_Pair_neg[simp]:
+  "\<not> is_Pair Zero" "\<not> is_Pair (Var v)" "\<not> is_Pair (Succ M)" "\<not> is_Pair (Pred M)"
+  "\<not> is_Pair (If M N P)" "\<not> is_Pair (App M N)" "\<not> is_Pair (Fix f x M)"
+  "\<not> is_Pair (term.Let xy M N)"
+  unfolding is_Pair_def by auto
+
+lemma is_Fix_fixapp[simp]: "is_Fix (fixapp k f x M)"
+  by (cases k) (auto simp: Lam_def)
+
+lemma not_is_Pair_fixapp[simp]: "\<not> is_Pair (fixapp k f x M)"
+  by (cases k) (auto simp: Lam_def)
+
+lemma apx_is_Fix: "apx n A A' \<Longrightarrow> is_Fix A' \<longleftrightarrow> is_Fix A"
+  by (erule apx.cases) auto
+
+lemma apx_is_Pair: "apx n A A' \<Longrightarrow> is_Pair A' \<longleftrightarrow> is_Pair A"
+  by (erule apx.cases) auto
+
+text \<open>Unfolding a fixpoint value is independent of its representation (an instance of the
+  determinism of the reduction relation).\<close>
+lemma Fix_unfold_cong:
+  fixes V :: "'a::var term"
+  assumes eq: "Fix f x M = Fix g y R" and v: "val V" and fV: "f \<notin> FVars V" and gV: "g \<notin> FVars V"
+  shows "M[V <- x][Fix f x M <- f] = R[V <- y][Fix g y R <- g]"
+proof -
+  have s1: "App (Fix f x M) V \<rightarrow> M[V <- x][Fix f x M <- f]" by (rule beta.FixBeta[OF v fV])
+  have s2: "App (Fix f x M) V \<rightarrow> R[V <- y][Fix g y R <- g]"
+    unfolding eq by (rule beta.FixBeta[OF v gV])
+  show ?thesis by (rule beta_deterministic[OF s1 s2])
+qed
+
+subsubsection \<open>Approximation preserves stuckness and normality\<close>
+
+lemma apx_stuck:
+  fixes A A' :: "'a::var term"
+  shows "apx n A A' \<Longrightarrow> stuck A \<Longrightarrow> stuck A'"
+proof (binder_induction n A A' avoiding: divt rule: apx.strong_induct)
+  case apx_Zero then show ?case using not_stuck_Zero by blast
+next
+  case (apx_Var v) then show ?case using not_stuck_Var by blast
+next
+  case (apx_Fix n M M' f x) then show ?case using not_stuck_Fix by blast
+next
+  case (apx_Ax M f x n k) then show ?case using not_stuck_Fix by blast
+next
+  case (apx_Succ n M M')
+  from stuck_Succ[OF \<open>stuck (Succ M)\<close>] show ?case
+  proof (elim disjE conjE)
+    assume "val M" and "\<not> num M"
+    then have "stuckEx (Succ M')"
+      using apx_val[OF \<open>apx n M M'\<close>] apx_num[OF \<open>apx n M M'\<close>]
+      by (auto intro: stuckEx.intros(1))
+    then show ?thesis by (rule stuckEx_imp_stuck)
+  next
+    assume "stuck M"
+    then have sM': "stuck M'" by (rule apx_Succ.IH)
+    obtain h where h: "h \<notin> FVars M'" by (meson arb_element finite_FVars)
+    have ctx: "eval_ctx h (Succ (Var h))" by (rule eval_ctx.intros(4)[OF eval_ctx.intros(1)])
+    show ?thesis using stuck_ctx[OF ctx sM' h] by simp
+  qed
+next
+  case (apx_Pred n M M')
+  from stuck_Pred[OF \<open>stuck (Pred M)\<close>] show ?case
+  proof (elim disjE conjE)
+    assume "val M" and "\<not> num M"
+    then have "stuckEx (Pred M')"
+      using apx_val[OF \<open>apx n M M'\<close>] apx_num[OF \<open>apx n M M'\<close>]
+      by (auto intro: stuckEx.intros(5))
+    then show ?thesis by (rule stuckEx_imp_stuck)
+  next
+    assume "stuck M"
+    then have sM': "stuck M'" by (rule apx_Pred.IH)
+    obtain h where h: "h \<notin> FVars M'" by (meson arb_element finite_FVars)
+    have ctx: "eval_ctx h (Pred (Var h))" by (rule eval_ctx.intros(5)[OF eval_ctx.intros(1)])
+    show ?thesis using stuck_ctx[OF ctx sM' h] by simp
+  qed
+next
+  case (apx_If n M M' N N' P P')
+  from stuck_If[OF \<open>stuck (If M N P)\<close>] show ?case
+  proof (elim disjE conjE)
+    assume "val M" and "\<not> num M"
+    then have "stuckEx (If M' N' P')"
+      using apx_val[OF \<open>apx n M M'\<close>] apx_num[OF \<open>apx n M M'\<close>]
+      by (auto intro: stuckEx.intros(2))
+    then show ?thesis by (rule stuckEx_imp_stuck)
+  next
+    assume "stuck M"
+    then have sM': "stuck M'" by (rule apx_If.IH(1))
+    obtain h where h: "h \<notin> FVars M' \<union> FVars N' \<union> FVars P'"
+      by (meson arb_element finite_FVars finite_UnI)
+    have ctx: "eval_ctx h (If (Var h) N' P')"
+      by (rule eval_ctx.intros(9)[OF eval_ctx.intros(1)]) (use h in auto)
+    have "stuck ((If (Var h) N' P')[M' <- h])"
+      by (rule stuck_ctx[OF ctx sM']) (use h in auto)
+    then show ?thesis using h by (auto simp: subst_idle)
+  qed
+next
+  case (apx_App n M M' N N')
+  from stuck_App[OF \<open>stuck (App M N)\<close>] show ?case
+  proof (elim disjE conjE)
+    assume "val M" and "\<not> is_Fix M"
+    then have "stuckEx (App M' N')"
+      using apx_val[OF \<open>apx n M M'\<close>] apx_is_Fix[OF \<open>apx n M M'\<close>]
+      by (auto intro: stuckEx.intros(3))
+    then show ?thesis by (rule stuckEx_imp_stuck)
+  next
+    assume "stuck M"
+    then have sM': "stuck M'" by (rule apx_App.IH(1))
+    obtain h where h: "h \<notin> FVars M' \<union> FVars N'"
+      by (meson arb_element finite_FVars finite_UnI)
+    have ctx: "eval_ctx h (App (Var h) N')"
+      by (rule eval_ctx.intros(3)[OF eval_ctx.intros(1)]) (use h in auto)
+    have "stuck ((App (Var h) N')[M' <- h])"
+      by (rule stuck_ctx[OF ctx sM']) (use h in auto)
+    then show ?thesis using h by (auto simp: subst_idle)
+  next
+    assume "is_Fix M" and "stuck N"
+    then have "is_Fix M'" using apx_is_Fix[OF \<open>apx n M M'\<close>] by simp
+    then obtain g y B where M'e: "M' = Fix g y B" unfolding is_Fix_def by blast
+    have sN': "stuck N'" by (rule apx_App.IH(2)[OF \<open>stuck N\<close>])
+    obtain h where h: "h \<notin> FVars B \<union> FVars N'"
+      by (meson arb_element finite_FVars finite_UnI)
+    have ctx: "eval_ctx h (App (Fix g y B) (Var h))"
+      by (rule eval_ctx.intros(2)[OF eval_ctx.intros(1)]) (use h in auto)
+    have "stuck ((App (Fix g y B) (Var h))[N' <- h])"
+      by (rule stuck_ctx[OF ctx sN']) (use h in auto)
+    moreover have "(App (Fix g y B) (Var h))[N' <- h] = App (Fix g y B) N'"
+      using h by (auto simp: subst_idle)
+    ultimately show ?thesis unfolding M'e by simp
+  qed
+next
+  case (apx_Pair n M M' N N')
+  from stuck_Pair[OF \<open>stuck (term.Pair M N)\<close>] show ?case
+  proof (elim disjE conjE)
+    assume "stuck M"
+    then have sM': "stuck M'" by (rule apx_Pair.IH(1))
+    obtain h where h: "h \<notin> FVars M' \<union> FVars N'"
+      by (meson arb_element finite_FVars finite_UnI)
+    have ctx: "eval_ctx h (term.Pair (Var h) N')"
+      by (rule eval_ctx.intros(6)[OF eval_ctx.intros(1)]) (use h in auto)
+    have "stuck ((term.Pair (Var h) N')[M' <- h])"
+      by (rule stuck_ctx[OF ctx sM']) (use h in auto)
+    then show ?thesis using h by (auto simp: subst_idle)
+  next
+    assume "val M" and "stuck N"
+    then have vM': "val M'" using apx_val[OF \<open>apx n M M'\<close>] by simp
+    have sN': "stuck N'" by (rule apx_Pair.IH(2)[OF \<open>stuck N\<close>])
+    obtain h where h: "h \<notin> FVars M' \<union> FVars N'"
+      by (meson arb_element finite_FVars finite_UnI)
+    have ctx: "eval_ctx h (term.Pair M' (Var h))"
+      by (rule eval_ctx.intros(7)[OF vM' eval_ctx.intros(1)]) (use h in auto)
+    have "stuck ((term.Pair M' (Var h))[N' <- h])"
+      by (rule stuck_ctx[OF ctx sN']) (use h in auto)
+    then show ?thesis using h by (auto simp: subst_idle)
+  qed
+next
+  case (apx_Let n M M' N N' xy)
+  from stuck_Let[OF \<open>stuck (term.Let xy M N)\<close>] show ?case
+  proof (elim disjE conjE)
+    assume "val M" and "\<not> is_Pair M"
+    then have "stuckEx (term.Let xy M' N')"
+      using apx_val[OF \<open>apx n M M'\<close>] apx_is_Pair[OF \<open>apx n M M'\<close>]
+      by (auto intro: stuckEx.intros(4))
+    then show ?thesis by (rule stuckEx_imp_stuck)
+  next
+    assume "stuck M"
+    then have sM': "stuck M'" using apx_Let by blast
+    obtain xy' N'' where eq: "term.Let xy M' N' = term.Let xy' M' N''"
+      and d: "dset xy' \<inter> FVars M' = {}"
+      using Let_refresh[of "FVars M'" xy M' N'] finite_FVars by blast
+    obtain h where h: "h \<notin> FVars M' \<union> FVars N'' \<union> dset xy'"
+      by (meson arb_element finite_FVars finite_dset finite_UnI)
+    have ctx: "eval_ctx h (term.Let xy' (Var h) N'')"
+      by (rule eval_ctx.intros(8)[OF eval_ctx.intros(1)]) (use h in auto)
+    have st: "stuck ((term.Let xy' (Var h) N'')[M' <- h])"
+      by (rule stuck_ctx[OF ctx sM']) (use h in auto)
+    have peq: "(term.Let xy' (Var h) N'')[M' <- h] = term.Let xy' M' N''"
+      using usubst_Let[of h xy' M' "Var h" N''] h d by (auto simp: subst_idle)
+    show ?thesis unfolding eq using st[unfolded peq] .
+  qed
+qed
+
+lemma apx_normal:
+  fixes A A' :: "'a::var term"
+  assumes "apx n A A'" and "normal A"
+  shows "normal A'"
+  using progress[OF assms(2)] apx_val[OF assms(1)] apx_stuck[OF assms(1)]
+    vals_are_normal stucks_are_normal by blast
+
+subsubsection \<open>Forward simulation\<close>
+
+text \<open>One step of a closed term is matched by one step of any approximation with positive
+  index; the residual approximation loses at most one unfolding. This is the formal content of
+  the paper's descendant-tracking in the proof of Theorem B.8.\<close>
+
+lemma apx_step:
+  fixes P P' Q :: "'a::var term"
+  shows "P \<rightarrow> P' \<Longrightarrow> apx (Suc n) P Q \<Longrightarrow> FVars P = {} \<Longrightarrow> \<exists>Q'. Q \<rightarrow> Q' \<and> apx n P' Q'"
+proof (induction P P' arbitrary: Q rule: beta.induct)
+  case (OrdApp2 N N' f x M)
+  obtain Q1 Q2 where Q: "Q = App Q1 Q2" and r1: "apx (Suc n) (Fix f x M) Q1"
+    and r2: "apx (Suc n) N Q2"
+    using apx_App_inv[OF OrdApp2.prems(1)] by blast
+  obtain Q2' where s2: "Q2 \<rightarrow> Q2'" and r2': "apx n N' Q2'"
+    using OrdApp2.IH[OF r2] OrdApp2.prems(2) by auto
+  have "is_Fix Q1" using apx_is_Fix[OF r1] by simp
+  then obtain g y B where Q1e: "Q1 = Fix g y B" unfolding is_Fix_def by blast
+  have "App (Fix g y B) Q2 \<rightarrow> App (Fix g y B) Q2'" by (rule beta.OrdApp2[OF s2])
+  moreover have "apx n (App (Fix f x M) N') (App Q1 Q2')"
+    by (intro apx.apx_App apx_S[OF r1] r2')
+  ultimately show ?case unfolding Q Q1e by blast
+next
+  case (OrdApp1 M M' N)
+  obtain Q1 Q2 where Q: "Q = App Q1 Q2" and r1: "apx (Suc n) M Q1" and r2: "apx (Suc n) N Q2"
+    using apx_App_inv[OF OrdApp1.prems(1)] by blast
+  obtain Q1' where s1: "Q1 \<rightarrow> Q1'" and r1': "apx n M' Q1'"
+    using OrdApp1.IH[OF r1] OrdApp1.prems(2) by auto
+  show ?case unfolding Q
+    using beta.OrdApp1[OF s1] apx.apx_App[OF r1' apx_S[OF r2]] by blast
+next
+  case (OrdSucc M M')
+  obtain Q1 where Q: "Q = Succ Q1" and r1: "apx (Suc n) M Q1"
+    using apx_Succ_inv[OF OrdSucc.prems(1)] by blast
+  obtain Q1' where s1: "Q1 \<rightarrow> Q1'" and r1': "apx n M' Q1'"
+    using OrdSucc.IH[OF r1] OrdSucc.prems(2) by auto
+  show ?case unfolding Q using beta.OrdSucc[OF s1] apx.apx_Succ[OF r1'] by blast
+next
+  case (OrdPred M M')
+  obtain Q1 where Q: "Q = Pred Q1" and r1: "apx (Suc n) M Q1"
+    using apx_Pred_inv[OF OrdPred.prems(1)] by blast
+  obtain Q1' where s1: "Q1 \<rightarrow> Q1'" and r1': "apx n M' Q1'"
+    using OrdPred.IH[OF r1] OrdPred.prems(2) by auto
+  show ?case unfolding Q using beta.OrdPred[OF s1] apx.apx_Pred[OF r1'] by blast
+next
+  case (OrdPair1 M M' N)
+  obtain Q1 Q2 where Q: "Q = term.Pair Q1 Q2" and r1: "apx (Suc n) M Q1"
+    and r2: "apx (Suc n) N Q2"
+    using apx_Pair_inv[OF OrdPair1.prems(1)] by blast
+  obtain Q1' where s1: "Q1 \<rightarrow> Q1'" and r1': "apx n M' Q1'"
+    using OrdPair1.IH[OF r1] OrdPair1.prems(2) by auto
+  show ?case unfolding Q
+    using beta.OrdPair1[OF s1] apx.apx_Pair[OF r1' apx_S[OF r2]] by blast
+next
+  case (OrdPair2 V N N')
+  obtain Q1 Q2 where Q: "Q = term.Pair Q1 Q2" and r1: "apx (Suc n) V Q1"
+    and r2: "apx (Suc n) N Q2"
+    using apx_Pair_inv[OF OrdPair2.prems(1)] by blast
+  have vQ1: "val Q1" using apx_val[OF r1] OrdPair2.hyps(1) by blast
+  obtain Q2' where s2: "Q2 \<rightarrow> Q2'" and r2': "apx n N' Q2'"
+    using OrdPair2.IH[OF r2] OrdPair2.prems(2) by auto
+  show ?case unfolding Q
+    using beta.OrdPair2[OF vQ1 s2] apx.apx_Pair[OF apx_S[OF r1] r2'] by blast
+next
+  case (OrdLet M M' xy N)
+  obtain Q1 Q2 where Q: "Q = term.Let xy Q1 Q2" and r1: "apx (Suc n) M Q1"
+    and r2: "apx (Suc n) N Q2"
+    using apx_Let_inv[OF OrdLet.prems(1)] by blast
+  obtain Q1' where s1: "Q1 \<rightarrow> Q1'" and r1': "apx n M' Q1'"
+    using OrdLet.IH[OF r1] OrdLet.prems(2) by auto
+  show ?case unfolding Q
+    using beta.OrdLet[OF s1] apx.apx_Let[OF r1' apx_S[OF r2]] by blast
+next
+  case (OrdIf M M' N P)
+  obtain Q1 Q2 Q3 where Q: "Q = If Q1 Q2 Q3" and r1: "apx (Suc n) M Q1"
+    and r2: "apx (Suc n) N Q2" and r3: "apx (Suc n) P Q3"
+    using apx_If_inv[OF OrdIf.prems(1)] by blast
+  obtain Q1' where s1: "Q1 \<rightarrow> Q1'" and r1': "apx n M' Q1'"
+    using OrdIf.IH[OF r1] OrdIf.prems(2) by auto
+  show ?case unfolding Q
+    using beta.OrdIf[OF s1] apx.apx_If[OF r1' apx_S[OF r2] apx_S[OF r3]] by blast
+next
+  case (Ifz N P)
+  obtain Q1 Q2 Q3 where Q: "Q = If Q1 Q2 Q3" and r1: "apx (Suc n) Zero Q1"
+    and r2: "apx (Suc n) N Q2" and r3: "apx (Suc n) P Q3"
+    using apx_If_inv[OF Ifz.prems(1)] by blast
+  have Q1e: "Q1 = Zero" using apx_Zero_inv[OF r1] .
+  show ?case unfolding Q Q1e using beta.Ifz apx_S[OF r2] by blast
+next
+  case (Ifs v N P)
+  obtain Q1 Q2 Q3 where Q: "Q = If Q1 Q2 Q3" and r1: "apx (Suc n) (Succ v) Q1"
+    and r2: "apx (Suc n) N Q2" and r3: "apx (Suc n) P Q3"
+    using apx_If_inv[OF Ifs.prems(1)] by blast
+  obtain v2 where Q1e: "Q1 = Succ v2" and rv: "apx (Suc n) v v2"
+    using apx_Succ_inv[OF r1] by blast
+  have nv2: "num v2" using apx_num[OF rv] Ifs.hyps by blast
+  show ?case unfolding Q Q1e using beta.Ifs[OF nv2] apx_S[OF r3] by blast
+next
+  case (Let V W xy M)
+  obtain Q1 Q2 where Q: "Q = term.Let xy Q1 Q2" and r1: "apx (Suc n) (term.Pair V W) Q1"
+    and r2: "apx (Suc n) M Q2"
+    using apx_Let_inv[OF Let.prems(1)] by blast
+  obtain V2 W2 where Q1e: "Q1 = term.Pair V2 W2" and rV: "apx (Suc n) V V2"
+    and rW: "apx (Suc n) W W2"
+    using apx_Pair_inv[OF r1] by blast
+  have vV2: "val V2" and vW2: "val W2"
+    using apx_val[OF rV] apx_val[OF rW] Let.hyps(1,2) by blast+
+  have clV: "FVars V = {}" and clW: "FVars W = {}" using Let.prems(2) by auto
+  have fvV2: "dset xy \<inter> FVars V2 = {}" using apx_FVars[OF rV] clV by simp
+  have step: "term.Let xy (term.Pair V2 W2) Q2 \<rightarrow> Q2[V2 <- dfst xy][W2 <- dsnd xy]"
+    by (rule beta.Let[OF vV2 vW2 fvV2])
+  have rel: "apx n (M[V <- dfst xy][W <- dsnd xy]) (Q2[V2 <- dfst xy][W2 <- dsnd xy])"
+    by (rule apx_usubst[OF apx_usubst[OF apx_S[OF r2] apx_S[OF rV] clV] apx_S[OF rW] clW])
+  show ?case unfolding Q Q1e using step rel by blast
+next
+  case (PredZ)
+  obtain Q1 where Q: "Q = Pred Q1" and r1: "apx (Suc n) Zero Q1"
+    using apx_Pred_inv[OF PredZ.prems(1)] by blast
+  have Q1e: "Q1 = Zero" using apx_Zero_inv[OF r1] .
+  show ?case unfolding Q Q1e using beta.PredZ apx.apx_Zero by blast
+next
+  case (PredS v)
+  obtain Q1 where Q: "Q = Pred Q1" and r1: "apx (Suc n) (Succ v) Q1"
+    using apx_Pred_inv[OF PredS.prems(1)] by blast
+  obtain v2 where Q1e: "Q1 = Succ v2" and rv: "apx (Suc n) v v2"
+    using apx_Succ_inv[OF r1] by blast
+  have nv2: "num v2" using apx_num[OF rv] PredS.hyps by blast
+  show ?case unfolding Q Q1e using beta.PredS[OF nv2] apx_S[OF rv] by blast
+next
+  case (FixBeta V f x M)
+  have clF: "FVars (Fix f x M) = {}" and clV: "FVars V = {}" using FixBeta.prems(2) by auto
+  obtain Q1 Q2 where Q: "Q = App Q1 Q2" and r1: "apx (Suc n) (Fix f x M) Q1"
+    and r2: "apx (Suc n) V Q2"
+    using apx_App_inv[OF FixBeta.prems(1)] by blast
+  have vQ2: "val Q2" using apx_val[OF r2] FixBeta.hyps(1) by blast
+  have clQ2: "FVars Q2 = {}" using apx_FVars[OF r2] clV by simp
+  from apx_Fix_inv[OF r1] show ?case
+  proof (elim disjE exE conjE)
+    fix M1' assume Q1e: "Q1 = Fix f x M1'" and relM: "apx (Suc n) M M1'"
+    have step: "App (Fix f x M1') Q2 \<rightarrow> M1'[Q2 <- x][Fix f x M1' <- f]"
+      by (rule beta.FixBeta[OF vQ2]) (use clQ2 in simp)
+    have rel: "apx n (M[V <- x][Fix f x M <- f]) (M1'[Q2 <- x][Fix f x M1' <- f])"
+      by (rule apx_usubst[OF apx_usubst[OF apx_S[OF relM] apx_S[OF r2] clV]
+            apx.apx_Fix[OF apx_S[OF relM]] clF])
+    show ?thesis unfolding Q Q1e using step rel by blast
+  next
+    fix g y R k
+    assume eqF: "Fix f x M = Fix g y R" and fvR: "FVars R \<subseteq> {g, y}" and gy: "g \<noteq> y"
+      and nk: "Suc n \<le> k" and Q1e: "Q1 = fixapp k g y R"
+    obtain k' where ke: "k = Suc k'" and k'n: "n \<le> k'" using nk by (cases k) auto
+    have gQ2: "g \<notin> FVars Q2" using clQ2 by simp
+    have step: "App (fixapp (Suc k') g y R) Q2 \<rightarrow> R[Q2 <- y][fixapp k' g y R <- g]"
+      by (rule fixapp_beta[OF vQ2 gy gQ2])
+    have clFg: "FVars (Fix g y R) = {}" using fvR by auto
+    have unf: "M[V <- x][Fix f x M <- f] = R[V <- y][Fix g y R <- g]"
+      by (rule Fix_unfold_cong[OF eqF FixBeta.hyps(1) FixBeta.hyps(2)]) (use clV in simp)
+    have rel: "apx n (R[V <- y][Fix g y R <- g]) (R[Q2 <- y][fixapp k' g y R <- g])"
+      by (rule apx_usubst[OF apx_usubst[OF apx_refl apx_S[OF r2] clV]
+            apx.apx_Ax[OF fvR gy k'n] clFg])
+    show ?thesis unfolding Q Q1e ke unf using step rel by blast
+  qed
+qed
+
+lemma apx_steps:
+  fixes P P'' Q :: "'a::var term"
+  shows "P \<rightarrow>[k] P'' \<Longrightarrow> apx (n + k) P Q \<Longrightarrow> FVars P = {} \<Longrightarrow>
+    \<exists>Q''. Q \<rightarrow>[k] Q'' \<and> apx n P'' Q''"
+proof (induction P k P'' arbitrary: Q rule: betas.induct)
+  case (refl M)
+  then show ?case by (auto intro: betas.refl)
+next
+  case (step M N k P'')
+  have "apx (Suc (n + k)) M Q" using step.prems(1) by simp
+  then obtain Q' where s1: "Q \<rightarrow> Q'" and r1: "apx (n + k) N Q'"
+    using apx_step[OF step.hyps(1) _ step.prems(2)] by blast
+  have clN: "FVars N = {}" using FVars_beta[OF step.hyps(1)] step.prems(2) by auto
+  obtain Q'' where "Q' \<rightarrow>[k] Q''" "apx n P'' Q''" using step.IH[OF r1 clN] by blast
+  then show ?case using s1 by (blast intro: betas.step)
+qed
+
+section \<open>Theorem B.8: fixpoint approximants decide non-membership\<close>
+
+lemma val_not_diverge: "val V \<Longrightarrow> \<not> (V \<Up>)"
+  using vals_are_normal unfolding normal_def by (metis diverge.cases)
+
+lemma val_in_taubot: "val V \<Longrightarrow> V \<in> \<lblot>A\<rblot> \<Longrightarrow> V \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+  using val_tau_iff by auto
+
+lemma not_val_taubot: "val V \<Longrightarrow> V \<notin> \<lblot>A\<rblot> \<Longrightarrow> V \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+  using val_tau_iff val_not_diverge by auto
+
+lemma Prod_is_Pair: "X \<in> \<lblot>Prod A B\<rblot> \<Longrightarrow> is_Pair X"
+  by (auto simp: is_Pair_def)
+
+lemma To_is_Fix: "X \<in> \<lblot>To A B\<rblot> \<Longrightarrow> is_Fix X"
+  by (auto simp: is_Fix_def)
+
+lemma OnlyTo_is_Fix: "X \<in> \<lblot>OnlyTo A B\<rblot> \<Longrightarrow> is_Fix X"
+  by (auto simp: is_Fix_def)
+
+text \<open>Fixpoint-approximant analogues of @{thm To_unfold} and @{thm OnlyTo_unfold}: the
+  approximant unfolds to the body with the next-lower approximant substituted for the
+  recursion variable, independently of the representation used for the membership.\<close>
+
+lemma To_unfold_fixapp:
+  fixes U :: "'a::var term"
+  assumes iW: "fixapp (Suc j) g y R \<in> \<lblot>To A B\<rblot>" and vU: "val U" and clU: "FVars U = {}"
+    and iU: "U \<in> \<lblot>A\<rblot>" and gy: "g \<noteq> y"
+  shows "R[U <- y][fixapp j g y R <- g] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+proof -
+  from iW obtain f' x' M0' where W': "fixapp (Suc j) g y R = Fix f' x' M0'"
+    and prop': "\<forall>U'\<in>Vals0. FVars U' = {} \<longrightarrow> U' \<in> \<lblot>A\<rblot> \<longrightarrow>
+      M0'[U' <- x'][Fix f' x' M0' <- f'] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+    unfolding type_semantics.simps by blast
+  have m: "M0'[U <- x'][fixapp (Suc j) g y R <- f'] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+    using prop' vU clU iU W' unfolding Vals0_def by auto
+  have f'U: "f' \<notin> FVars U" and gU: "g \<notin> FVars U" using clU by auto
+  have "App (fixapp (Suc j) g y R) U \<rightarrow> M0'[U <- x'][fixapp (Suc j) g y R <- f']"
+    using beta.FixBeta[OF vU f'U, of x' M0'] W' by simp
+  moreover have "App (fixapp (Suc j) g y R) U \<rightarrow> R[U <- y][fixapp j g y R <- g]"
+    by (rule fixapp_beta[OF vU gy gU])
+  ultimately have "R[U <- y][fixapp j g y R <- g] = M0'[U <- x'][fixapp (Suc j) g y R <- f']"
+    using beta_deterministic by blast
+  then show ?thesis using m by simp
+qed
+
+lemma OnlyTo_unfold_fixapp:
+  fixes U :: "'a::var term"
+  assumes iW: "fixapp (Suc j) g y R \<in> \<lblot>OnlyTo A B\<rblot>" and vU: "val U" and clU: "FVars U = {}"
+    and gy: "g \<noteq> y" and mem: "R[U <- y][fixapp j g y R <- g] \<in> \<T>\<lblot>B\<rblot>"
+  shows "U \<in> \<lblot>A\<rblot>"
+proof -
+  from iW obtain f' x' M0' where W': "fixapp (Suc j) g y R = Fix f' x' M0'"
+    and prop': "\<forall>U'\<in>Vals0. FVars U' = {} \<longrightarrow>
+      M0'[U' <- x'][Fix f' x' M0' <- f'] \<in> \<T>\<lblot>B\<rblot> \<longrightarrow> U' \<in> \<lblot>A\<rblot>"
+    unfolding type_semantics.simps by blast
+  have f'U: "f' \<notin> FVars U" and gU: "g \<notin> FVars U" using clU by auto
+  have "App (fixapp (Suc j) g y R) U \<rightarrow> M0'[U <- x'][fixapp (Suc j) g y R <- f']"
+    using beta.FixBeta[OF vU f'U, of x' M0'] W' by simp
+  moreover have "App (fixapp (Suc j) g y R) U \<rightarrow> R[U <- y][fixapp j g y R <- g]"
+    by (rule fixapp_beta[OF vU gy gU])
+  ultimately have "R[U <- y][fixapp j g y R <- g] = M0'[U <- x'][fixapp (Suc j) g y R <- f']"
+    using beta_deterministic by blast
+  then have "M0'[U <- x'][Fix f' x' M0' <- f'] \<in> \<T>\<lblot>B\<rblot>" using mem W' by simp
+  then show ?thesis using prop' vU clU unfolding Vals0_def by auto
+qed
+
+lemma notin_taubot_of_normal_reach:
+  fixes Q :: "'a::var term"
+  assumes sQ: "Q \<rightarrow>[k] Qf" and nf: "normal Qf" and nv: "\<not> (val Qf \<and> Qf \<in> \<lblot>A\<rblot>)"
+  shows "Q \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+proof -
+  have norm: "normalizes Q" using sQ nf unfolding normalizes_def beta_star_def by blast
+  have ndiv: "\<not> diverge Q" using norm diverge_xor_normalizes by blast
+  have "Q \<notin> \<T>\<lblot>A\<rblot>"
+  proof
+    assume "Q \<in> \<T>\<lblot>A\<rblot>"
+    then obtain W where iW: "W \<in> \<lblot>A\<rblot>" and sW: "Q \<rightarrow>* W" and vW: "val W" by auto
+    have "W = Qf"
+      using beta_star_normal_unique[OF sW vals_are_normal[OF vW] _ nf] sQ
+      unfolding beta_star_def by blast
+    then show False using nv vW iW by blast
+  qed
+  then show ?thesis using ndiv by simp
+qed
+
+text \<open>The two directions of Theorem B.8 share a common skeleton: run the (closed) term to its
+  normal form, simulate the run on the approximant side via @{thm apx_steps}, and analyse the
+  reached normal forms. The analysis of reached \<^emph>\<open>values\<close> is the only type-dependent part, so we
+  factor the skeleton into two gluing lemmas parameterised by the value-level property.\<close>
+
+lemma b8i_glue:
+  fixes P :: "'a::var term"
+  assumes cl: "FVars P = {}" and notin: "P \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+    and vals: "\<And>V :: 'a term. val V \<Longrightarrow> FVars V = {} \<Longrightarrow> V \<notin> \<lblot>A\<rblot> \<Longrightarrow>
+      \<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>A\<rblot>"
+  shows "\<exists>n0. \<forall>n\<ge>n0. \<forall>Q. apx n P Q \<longrightarrow> Q \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+proof -
+  have ndiv: "\<not> diverge P" using notin by auto
+  then have "normalizes P" using diverge_or_normalizes by blast
+  then obtain k Pf where st: "P \<rightarrow>[k] Pf" and nf: "normal Pf"
+    unfolding normalizes_def beta_star_def by blast
+  have clPf: "FVars Pf = {}" using FVars_betas[OF st] cl by auto
+  from progress[OF nf] show ?thesis
+  proof
+    assume sPf: "stuck Pf"
+    have "\<forall>n\<ge>k. \<forall>Q. apx n P Q \<longrightarrow> Q \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+    proof (intro allI impI)
+      fix n Q assume nk: "k \<le> n" and aQ: "apx n P Q"
+      have "apx ((n - k) + k) P Q" using aQ nk by simp
+      then obtain Qf where sQ: "Q \<rightarrow>[k] Qf" and aQf: "apx (n - k) Pf Qf"
+        using apx_steps[OF st _ cl] by blast
+      have "stuck Qf" using apx_stuck[OF aQf sPf] .
+      then show "Q \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+        using notin_taubot_of_normal_reach[OF sQ stucks_are_normal] stuck_not_val by blast
+    qed
+    then show ?thesis by blast
+  next
+    assume vPf: "val Pf"
+    have "Pf \<notin> \<lblot>A\<rblot>"
+    proof
+      assume "Pf \<in> \<lblot>A\<rblot>"
+      then have "P \<in> \<T>\<lblot>A\<rblot>"
+        using st vPf unfolding tau_semantics.simps beta_star_def by blast
+      then show False using notin by simp
+    qed
+    then obtain m0 where m0: "\<forall>m\<ge>m0. \<forall>W. apx m Pf W \<longrightarrow> W \<notin> \<lblot>A\<rblot>"
+      using vals[OF vPf clPf] by blast
+    have "\<forall>n\<ge>k + m0. \<forall>Q. apx n P Q \<longrightarrow> Q \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+    proof (intro allI impI)
+      fix n Q assume nk: "k + m0 \<le> n" and aQ: "apx n P Q"
+      have "apx ((n - k) + k) P Q" using aQ nk by simp
+      then obtain Qf where sQ: "Q \<rightarrow>[k] Qf" and aQf: "apx (n - k) Pf Qf"
+        using apx_steps[OF st _ cl] by blast
+      have "m0 \<le> n - k" using nk by arith
+      then have "Qf \<notin> \<lblot>A\<rblot>" using m0 aQf by blast
+      moreover have "val Qf" using apx_val[OF aQf] vPf by blast
+      ultimately show "Q \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+        using notin_taubot_of_normal_reach[OF sQ vals_are_normal] by blast
+    qed
+    then show ?thesis by blast
+  qed
+qed
+
+lemma b8ii_glue:
+  fixes P :: "'a::var term"
+  assumes cl: "FVars P = {}" and inT: "P \<in> \<T>\<lblot>A\<rblot>"
+    and vals: "\<And>V :: 'a term. val V \<Longrightarrow> FVars V = {} \<Longrightarrow> V \<in> \<lblot>A\<rblot> \<Longrightarrow>
+      \<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<in> \<lblot>A\<rblot>"
+  shows "\<exists>n0. \<forall>n\<ge>n0. \<forall>Q. apx n P Q \<longrightarrow> Q \<in> \<T>\<lblot>A\<rblot>"
+proof -
+  from inT obtain V where iV: "V \<in> \<lblot>A\<rblot>" and sV: "P \<rightarrow>* V" and vV: "val V" by auto
+  obtain k where st: "P \<rightarrow>[k] V" using sV unfolding beta_star_def by blast
+  have clV: "FVars V = {}" using FVars_betas[OF st] cl by auto
+  obtain m0 where m0: "\<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<in> \<lblot>A\<rblot>"
+    using vals[OF vV clV iV] by blast
+  have "\<forall>n\<ge>k + m0. \<forall>Q. apx n P Q \<longrightarrow> Q \<in> \<T>\<lblot>A\<rblot>"
+  proof (intro allI impI)
+    fix n Q assume nk: "k + m0 \<le> n" and aQ: "apx n P Q"
+    have "apx ((n - k) + k) P Q" using aQ nk by simp
+    then obtain W where sQ: "Q \<rightarrow>[k] W" and aW: "apx (n - k) V W"
+      using apx_steps[OF st _ cl] by blast
+    have "m0 \<le> n - k" using nk by arith
+    then have "W \<in> \<lblot>A\<rblot>" using m0 aW by blast
+    moreover have "val W" using apx_val[OF aW] vV by blast
+    ultimately show "Q \<in> \<T>\<lblot>A\<rblot>"
+      using sQ unfolding tau_semantics.simps beta_star_def by blast
+  qed
+  then show ?thesis by blast
+qed
+
+theorem b8_induction:
+  fixes P :: "'a::var term"
+  shows "safe A \<Longrightarrow> FVars P = {} \<Longrightarrow> P \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<Longrightarrow>
+      \<exists>n0. \<forall>n\<ge>n0. \<forall>Q. apx n P Q \<longrightarrow> Q \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+    and "finitely_verifiable A \<Longrightarrow> FVars P = {} \<Longrightarrow> P \<in> \<T>\<lblot>A\<rblot> \<Longrightarrow>
+      \<exists>n0. \<forall>n\<ge>n0. \<forall>Q. apx n P Q \<longrightarrow> Q \<in> \<T>\<lblot>A\<rblot>"
+proof (induction A arbitrary: P)
+  case Nat
+  {
+    case 1
+    show ?case
+    proof (rule b8i_glue[OF 1(2,3)])
+      fix V :: "'a term" assume "V \<notin> \<lblot>Nat\<rblot>"
+      then have "\<forall>m\<ge>(0::nat). \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>Nat\<rblot>"
+        using apx_num by fastforce
+      then show "\<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>Nat\<rblot>" by blast
+    qed
+  next
+    case 2
+    show ?case
+    proof (rule b8ii_glue[OF 2(2,3)])
+      fix V :: "'a term" assume "V \<in> \<lblot>Nat\<rblot>"
+      then have "\<forall>m\<ge>(0::nat). \<forall>W. apx m V W \<longrightarrow> W \<in> \<lblot>Nat\<rblot>"
+        using apx_num by fastforce
+      then show "\<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<in> \<lblot>Nat\<rblot>" by blast
+    qed
+  }
+next
+  case Ok
+  {
+    case 1
+    show ?case
+    proof (rule b8i_glue[OF 1(2,3)])
+      fix V :: "'a term" assume "val V" and "V \<notin> \<lblot>Ok\<rblot>"
+      then show "\<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>Ok\<rblot>"
+        by (simp add: Vals0_def)
+    qed
+  next
+    case 2
+    show ?case
+    proof (rule b8ii_glue[OF 2(2,3)])
+      fix V :: "'a term" assume "val V"
+      then have "\<forall>m\<ge>(0::nat). \<forall>W. apx m V W \<longrightarrow> W \<in> \<lblot>Ok\<rblot>"
+        using apx_val by (fastforce simp: Vals0_def)
+      then show "\<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<in> \<lblot>Ok\<rblot>" by blast
+    qed
+  }
+next
+  case (Prod A1 A2)
+  {
+    case 1
+    have sA1: "safe A1" and sA2: "safe A2" using safe_Prod[OF 1(1)] by auto
+    show ?case
+    proof (rule b8i_glue[OF 1(2,3)])
+      fix V :: "'a term" assume vV: "val V" and clV: "FVars V = {}" and nin: "V \<notin> \<lblot>Prod A1 A2\<rblot>"
+      show "\<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>Prod A1 A2\<rblot>"
+      proof (cases "is_Pair V")
+        case False
+        then have "\<forall>m\<ge>(0::nat). \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>Prod A1 A2\<rblot>"
+          using apx_is_Pair Prod_is_Pair by blast
+        then show ?thesis by blast
+      next
+        case True
+        then obtain V1 V2 where Ve: "V = term.Pair V1 V2" unfolding is_Pair_def by blast
+        have vV1: "val V1" and vV2: "val V2" using val_Pair_D[OF vV[unfolded Ve]] by auto
+        have clV1: "FVars V1 = {}" and clV2: "FVars V2 = {}" using clV Ve by auto
+        have "V1 \<notin> \<lblot>A1\<rblot> \<or> V2 \<notin> \<lblot>A2\<rblot>" using nin Ve by auto
+        then show ?thesis
+        proof
+          assume n1: "V1 \<notin> \<lblot>A1\<rblot>"
+          have "V1 \<notin> \<T>\<^sub>\<bottom>\<lblot>A1\<rblot>" using not_val_taubot[OF vV1 n1] .
+          then obtain m1 where m1: "\<forall>m\<ge>m1. \<forall>X. apx m V1 X \<longrightarrow> X \<notin> \<T>\<^sub>\<bottom>\<lblot>A1\<rblot>"
+            using Prod.IH(1)[OF sA1 clV1] by blast
+          have "\<forall>m\<ge>m1. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>Prod A1 A2\<rblot>"
+          proof (intro allI impI)
+            fix m W assume mm: "m1 \<le> m" and aW: "apx m V W"
+            obtain W1 W2 where We: "W = term.Pair W1 W2" and a1: "apx m V1 W1"
+              using apx_Pair_inv[OF aW[unfolded Ve]] by blast
+            have "W1 \<notin> \<T>\<^sub>\<bottom>\<lblot>A1\<rblot>" using m1 mm a1 by blast
+            then have "W1 \<notin> \<lblot>A1\<rblot>"
+              using val_in_taubot apx_val[OF a1] vV1 by blast
+            then show "W \<notin> \<lblot>Prod A1 A2\<rblot>" unfolding We by auto
+          qed
+          then show ?thesis by blast
+        next
+          assume n2: "V2 \<notin> \<lblot>A2\<rblot>"
+          have "V2 \<notin> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" using not_val_taubot[OF vV2 n2] .
+          then obtain m2 where m2: "\<forall>m\<ge>m2. \<forall>X. apx m V2 X \<longrightarrow> X \<notin> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>"
+            using Prod.IH(3)[OF sA2 clV2] by blast
+          have "\<forall>m\<ge>m2. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>Prod A1 A2\<rblot>"
+          proof (intro allI impI)
+            fix m W assume mm: "m2 \<le> m" and aW: "apx m V W"
+            obtain W1 W2 where We: "W = term.Pair W1 W2" and a2: "apx m V2 W2"
+              using apx_Pair_inv[OF aW[unfolded Ve]] by blast
+            have "W2 \<notin> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>" using m2 mm a2 by blast
+            then have "W2 \<notin> \<lblot>A2\<rblot>"
+              using val_in_taubot apx_val[OF a2] vV2 by blast
+            then show "W \<notin> \<lblot>Prod A1 A2\<rblot>" unfolding We by auto
+          qed
+          then show ?thesis by blast
+        qed
+      qed
+    qed
+  next
+    case 2
+    have f1: "finitely_verifiable A1" and f2: "finitely_verifiable A2"
+      using fv_Prod[OF 2(1)] by auto
+    show ?case
+    proof (rule b8ii_glue[OF 2(2,3)])
+      fix V :: "'a term" assume vV: "val V" and clV: "FVars V = {}" and iV: "V \<in> \<lblot>Prod A1 A2\<rblot>"
+      obtain V1 V2 where Ve: "V = term.Pair V1 V2" and i1: "V1 \<in> \<lblot>A1\<rblot>" and i2: "V2 \<in> \<lblot>A2\<rblot>"
+        using iV by auto
+      have vV1: "val V1" and vV2: "val V2" using val_Pair_D[OF vV[unfolded Ve]] by auto
+      have clV1: "FVars V1 = {}" and clV2: "FVars V2 = {}" using clV Ve by auto
+      have t1: "V1 \<in> \<T>\<lblot>A1\<rblot>" using val_tau_iff[OF vV1] i1 by simp
+      have t2: "V2 \<in> \<T>\<lblot>A2\<rblot>" using val_tau_iff[OF vV2] i2 by simp
+      obtain m1 where m1: "\<forall>m\<ge>m1. \<forall>X. apx m V1 X \<longrightarrow> X \<in> \<T>\<lblot>A1\<rblot>"
+        using Prod.IH(2)[OF f1 clV1 t1] by blast
+      obtain m2 where m2: "\<forall>m\<ge>m2. \<forall>X. apx m V2 X \<longrightarrow> X \<in> \<T>\<lblot>A2\<rblot>"
+        using Prod.IH(4)[OF f2 clV2 t2] by blast
+      have "\<forall>m\<ge>max m1 m2. \<forall>W. apx m V W \<longrightarrow> W \<in> \<lblot>Prod A1 A2\<rblot>"
+      proof (intro allI impI)
+        fix m W assume mm: "max m1 m2 \<le> m" and aW: "apx m V W"
+        obtain W1 W2 where We: "W = term.Pair W1 W2" and a1: "apx m V1 W1" and a2: "apx m V2 W2"
+          using apx_Pair_inv[OF aW[unfolded Ve]] by blast
+        have "W1 \<in> \<T>\<lblot>A1\<rblot>" using m1 mm a1 by auto
+        then have j1: "W1 \<in> \<lblot>A1\<rblot>" using val_tau_iff apx_val[OF a1] vV1 by blast
+        have "W2 \<in> \<T>\<lblot>A2\<rblot>" using m2 mm a2 by auto
+        then have j2: "W2 \<in> \<lblot>A2\<rblot>" using val_tau_iff apx_val[OF a2] vV2 by blast
+        show "W \<in> \<lblot>Prod A1 A2\<rblot>" unfolding We using j1 j2 by auto
+      qed
+      then show "\<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<in> \<lblot>Prod A1 A2\<rblot>" by blast
+    qed
+  }
+next
+  case (To A1 A2)
+  {
+    case 1
+    have sA2: "safe A2" using safe_To[OF 1(1)] by auto
+    show ?case
+    proof (rule b8i_glue[OF 1(2,3)])
+      fix V :: "'a term" assume vV: "val V" and clV: "FVars V = {}" and nin: "V \<notin> \<lblot>To A1 A2\<rblot>"
+      show "\<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>To A1 A2\<rblot>"
+      proof (cases "is_Fix V")
+        case False
+        then have "\<forall>m\<ge>(0::nat). \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>To A1 A2\<rblot>"
+          using apx_is_Fix To_is_Fix by blast
+        then show ?thesis by blast
+      next
+        case True
+        then obtain g y R where Ve: "V = Fix g y R" unfolding is_Fix_def by blast
+        have "\<not> (\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow> U \<in> \<lblot>A1\<rblot> \<longrightarrow>
+          R[U <- y][Fix g y R <- g] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>)"
+        proof
+          assume "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow> U \<in> \<lblot>A1\<rblot> \<longrightarrow>
+            R[U <- y][Fix g y R <- g] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>"
+          then have "V \<in> \<lblot>To A1 A2\<rblot>" unfolding Ve type_semantics.simps by blast
+          then show False using nin by simp
+        qed
+        then obtain U where vU: "val U" and clU: "FVars U = {}" and iU: "U \<in> \<lblot>A1\<rblot>"
+          and P2nin: "R[U <- y][Fix g y R <- g] \<notin> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>"
+          unfolding Vals0_def by blast
+        have clP2: "FVars (R[U <- y][Fix g y R <- g]) = {}"
+          using clV clU unfolding Ve by (auto simp: FVars_usubst split: if_splits)
+        obtain m1 where m1: "\<forall>m\<ge>m1. \<forall>X. apx m (R[U <- y][Fix g y R <- g]) X \<longrightarrow> X \<notin> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>"
+          using To.IH(3)[OF sA2 clP2 P2nin] by blast
+        have "\<forall>m\<ge>Suc m1. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>To A1 A2\<rblot>"
+        proof (intro allI impI)
+          fix m W assume mm: "Suc m1 \<le> m" and aW: "apx m V W"
+          from apx_Fix_inv[OF aW[unfolded Ve]] show "W \<notin> \<lblot>To A1 A2\<rblot>"
+          proof (elim disjE exE conjE)
+            fix R' assume We: "W = Fix g y R'" and aR: "apx m R R'"
+            show ?thesis
+            proof
+              assume Win: "W \<in> \<lblot>To A1 A2\<rblot>"
+              have unf: "R'[U <- y][W <- g] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>"
+                by (rule To_unfold[OF Win vU clU iU We])
+              have rel: "apx m1 (R[U <- y][Fix g y R <- g]) (R'[U <- y][W <- g])"
+                unfolding We
+                by (rule apx_usubst[OF apx_usubst[OF apx_mono[OF aR] apx_refl clU]
+                      apx.apx_Fix[OF apx_mono[OF aR]] clV[unfolded Ve]])
+                  (use mm in auto)
+              show False using m1 rel unf by auto
+            qed
+          next
+            fix g2 y2 R2 j
+            assume eqF: "Fix g y R = Fix g2 y2 R2" and fvR2: "FVars R2 \<subseteq> {g2, y2}"
+              and gy2: "g2 \<noteq> y2" and mj: "m \<le> j" and We: "W = fixapp j g2 y2 R2"
+            obtain j' where je: "j = Suc j'" and j'm: "m1 \<le> j'"
+              using mj mm by (cases j) auto
+            have clF2: "FVars (Fix g2 y2 R2) = {}" using fvR2 by auto
+            have unfeq: "R[U <- y][Fix g y R <- g] = R2[U <- y2][Fix g2 y2 R2 <- g2]"
+              by (rule Fix_unfold_cong[OF eqF vU]) (use clU in auto)
+            show ?thesis
+            proof
+              assume Win: "W \<in> \<lblot>To A1 A2\<rblot>"
+              have unf: "R2[U <- y2][fixapp j' g2 y2 R2 <- g2] \<in> \<T>\<^sub>\<bottom>\<lblot>A2\<rblot>"
+                by (rule To_unfold_fixapp[OF Win[unfolded We je] vU clU iU gy2])
+              have rel: "apx m1 (R2[U <- y2][Fix g2 y2 R2 <- g2])
+                  (R2[U <- y2][fixapp j' g2 y2 R2 <- g2])"
+                by (rule apx_usubst[OF apx_refl apx.apx_Ax[OF fvR2 gy2 j'm] clF2])
+              show False using m1 rel unf unfolding unfeq by auto
+            qed
+          qed
+        qed
+        then show ?thesis by blast
+      qed
+    qed
+  next
+    case 2
+    then show ?case using not_fv_To by blast
+  }
+next
+  case (OnlyTo A1 A2)
+  {
+    case 1
+    have fA2: "finitely_verifiable A2" using safe_OnlyTo[OF 1(1)] by auto
+    show ?case
+    proof (rule b8i_glue[OF 1(2,3)])
+      fix V :: "'a term" assume vV: "val V" and clV: "FVars V = {}" and nin: "V \<notin> \<lblot>OnlyTo A1 A2\<rblot>"
+      show "\<exists>m0. \<forall>m\<ge>m0. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>OnlyTo A1 A2\<rblot>"
+      proof (cases "is_Fix V")
+        case False
+        then have "\<forall>m\<ge>(0::nat). \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>OnlyTo A1 A2\<rblot>"
+          using apx_is_Fix OnlyTo_is_Fix by blast
+        then show ?thesis by blast
+      next
+        case True
+        then obtain g y R where Ve: "V = Fix g y R" unfolding is_Fix_def by blast
+        have "\<not> (\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow>
+          R[U <- y][Fix g y R <- g] \<in> \<T>\<lblot>A2\<rblot> \<longrightarrow> U \<in> \<lblot>A1\<rblot>)"
+        proof
+          assume "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow>
+            R[U <- y][Fix g y R <- g] \<in> \<T>\<lblot>A2\<rblot> \<longrightarrow> U \<in> \<lblot>A1\<rblot>"
+          then have "V \<in> \<lblot>OnlyTo A1 A2\<rblot>" unfolding Ve type_semantics.simps by blast
+          then show False using nin by simp
+        qed
+        then obtain U where vU: "val U" and clU: "FVars U = {}"
+          and P2in: "R[U <- y][Fix g y R <- g] \<in> \<T>\<lblot>A2\<rblot>" and nU: "U \<notin> \<lblot>A1\<rblot>"
+          unfolding Vals0_def by blast
+        have clP2: "FVars (R[U <- y][Fix g y R <- g]) = {}"
+          using clV clU unfolding Ve by (auto simp: FVars_usubst split: if_splits)
+        obtain m1 where m1: "\<forall>m\<ge>m1. \<forall>X. apx m (R[U <- y][Fix g y R <- g]) X \<longrightarrow> X \<in> \<T>\<lblot>A2\<rblot>"
+          using OnlyTo.IH(4)[OF fA2 clP2 P2in] by blast
+        have "\<forall>m\<ge>Suc m1. \<forall>W. apx m V W \<longrightarrow> W \<notin> \<lblot>OnlyTo A1 A2\<rblot>"
+        proof (intro allI impI)
+          fix m W assume mm: "Suc m1 \<le> m" and aW: "apx m V W"
+          from apx_Fix_inv[OF aW[unfolded Ve]] show "W \<notin> \<lblot>OnlyTo A1 A2\<rblot>"
+          proof (elim disjE exE conjE)
+            fix R' assume We: "W = Fix g y R'" and aR: "apx m R R'"
+            show ?thesis
+            proof
+              assume Win: "W \<in> \<lblot>OnlyTo A1 A2\<rblot>"
+              have rel: "apx m1 (R[U <- y][Fix g y R <- g]) (R'[U <- y][W <- g])"
+                unfolding We
+                by (rule apx_usubst[OF apx_usubst[OF apx_mono[OF aR] apx_refl clU]
+                      apx.apx_Fix[OF apx_mono[OF aR]] clV[unfolded Ve]])
+                  (use mm in auto)
+              have unf: "R'[U <- y][W <- g] \<in> \<T>\<lblot>A2\<rblot>" using m1 rel by auto
+              have "U \<in> \<lblot>A1\<rblot>" by (rule OnlyTo_unfold[OF Win vU clU We unf])
+              then show False using nU by simp
+            qed
+          next
+            fix g2 y2 R2 j
+            assume eqF: "Fix g y R = Fix g2 y2 R2" and fvR2: "FVars R2 \<subseteq> {g2, y2}"
+              and gy2: "g2 \<noteq> y2" and mj: "m \<le> j" and We: "W = fixapp j g2 y2 R2"
+            obtain j' where je: "j = Suc j'" and j'm: "m1 \<le> j'"
+              using mj mm by (cases j) auto
+            have clF2: "FVars (Fix g2 y2 R2) = {}" using fvR2 by auto
+            have unfeq: "R[U <- y][Fix g y R <- g] = R2[U <- y2][Fix g2 y2 R2 <- g2]"
+              by (rule Fix_unfold_cong[OF eqF vU]) (use clU in auto)
+            show ?thesis
+            proof
+              assume Win: "W \<in> \<lblot>OnlyTo A1 A2\<rblot>"
+              have rel: "apx m1 (R2[U <- y2][Fix g2 y2 R2 <- g2])
+                  (R2[U <- y2][fixapp j' g2 y2 R2 <- g2])"
+                by (rule apx_usubst[OF apx_refl apx.apx_Ax[OF fvR2 gy2 j'm] clF2])
+              have unf: "R2[U <- y2][fixapp j' g2 y2 R2 <- g2] \<in> \<T>\<lblot>A2\<rblot>"
+                using m1 rel unfolding unfeq by auto
+              have "U \<in> \<lblot>A1\<rblot>"
+                by (rule OnlyTo_unfold_fixapp[OF Win[unfolded We je] vU clU gy2 unf])
+              then show False using nU by simp
+            qed
+          qed
+        qed
+        then show ?thesis by blast
+      qed
+    qed
+  next
+    case 2
+    then show ?case using not_fv_OnlyTo by blast
+  }
+qed
+
+text \<open>Theorem B.8 in the paper's formulation: multi-hole contexts are represented by
+  substitution of a distinguished variable \<open>z\<close>.\<close>
+
+theorem b8:
+  fixes C :: "'a::var term"
+  assumes clF: "FVars (Fix f x M) = {}" and fx: "f \<noteq> x"
+    and cl: "FVars (C[Fix f x M <- z]) = {}"
+  shows "safe A \<Longrightarrow> C[Fix f x M <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<Longrightarrow>
+      \<exists>n0. \<forall>n\<ge>n0. C[fixapp n f x M <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+    and "finitely_verifiable A \<Longrightarrow> C[Fix f x M <- z] \<in> \<T>\<lblot>A\<rblot> \<Longrightarrow>
+      \<exists>n0. \<forall>n\<ge>n0. C[fixapp n f x M <- z] \<in> \<T>\<lblot>A\<rblot>"
+proof -
+  have fvM: "FVars M \<subseteq> {f, x}" using clF by auto
+  have rel: "\<And>n. apx n (C[Fix f x M <- z]) (C[fixapp n f x M <- z])"
+    by (rule apx_usubst[OF apx_refl apx.apx_Ax[OF fvM fx] clF]) simp
+  {
+    assume "safe A" and "C[Fix f x M <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+    then obtain n0 where "\<forall>n\<ge>n0. \<forall>Q. apx n (C[Fix f x M <- z]) Q \<longrightarrow> Q \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+      using b8_induction(1)[OF _ cl] by blast
+    then have "\<forall>n\<ge>n0. C[fixapp n f x M <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>" using rel by blast
+    then show "\<exists>n0. \<forall>n\<ge>n0. C[fixapp n f x M <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>" by blast
+  }
+  {
+    assume "finitely_verifiable A" and "C[Fix f x M <- z] \<in> \<T>\<lblot>A\<rblot>"
+    then obtain n0 where "\<forall>n\<ge>n0. \<forall>Q. apx n (C[Fix f x M <- z]) Q \<longrightarrow> Q \<in> \<T>\<lblot>A\<rblot>"
+      using b8_induction(2)[OF _ cl] by blast
+    then have "\<forall>n\<ge>n0. C[fixapp n f x M <- z] \<in> \<T>\<lblot>A\<rblot>" using rel by blast
+    then show "\<exists>n0. \<forall>n\<ge>n0. C[fixapp n f x M <- z] \<in> \<T>\<lblot>A\<rblot>" by blast
+  }
+qed
+
+section \<open>Safety Properties (Definition 4.4 and Theorem 4.7)\<close>
+
+text \<open>A type defines a safety property (Definition 4.4) if membership in \<open>\<T>\<^sub>\<bottom>\<close> is (S1) downwards
+  closed in the termination order \<open>\<lesssim>\<close> and (S2) admits finite counterexamples, witnessed by
+  fixpoint approximants. Multi-hole contexts \<open>C[\<cdot>]\<close> are represented by terms with a
+  distinguished free variable \<open>z\<close>. The \<open>itself\<close> argument fixes the variable type of the terms.\<close>
+
+definition safety_property :: "'a::var itself \<Rightarrow> type \<Rightarrow> bool" where
+  "safety_property tt A \<longleftrightarrow>
+    ((\<forall>(C::'a term) N P z. FVars (C[N <- z]) = {} \<longrightarrow> P \<lesssim> N \<longrightarrow>
+        C[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<longrightarrow> C[P <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>) \<and>
+     (\<forall>(C::'a term) f x M z. f \<noteq> x \<longrightarrow> FVars (Fix f x M) = {} \<longrightarrow>
+        FVars (C[Fix f x M <- z]) = {} \<longrightarrow> C[Fix f x M <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<longrightarrow>
+        (\<exists>k. C[fixapp k f x M <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>)))"
+
+text \<open>Theorem 4.7: every type in the safety fragment defines a safety property. (S1) is
+  Theorem B.7, (S2) is Theorem B.8.\<close>
+
+theorem safety_of_safe: \<comment> \<open>Theorem 4.7\<close>
+  assumes "safe A"
+  shows "safety_property (tt :: 'a::var itself) A"
+  unfolding safety_property_def
+proof (intro conjI allI impI)
+  fix C N P z :: "'a term" and za :: 'a
+  {
+    fix z :: 'a
+    assume "FVars (C[N <- z]) = {}" and "P \<lesssim> N" and "C[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+    then show "C[P <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+      using b7[of C N z P A] assms by blast
+  }
+next
+  fix C M :: "'a term" and f x z :: 'a
+  assume "f \<noteq> x" and "FVars (Fix f x M) = {}" and "FVars (C[Fix f x M <- z]) = {}"
+    and "C[Fix f x M <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+  then show "\<exists>k. C[fixapp k f x M <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+    using b8(1)[of f x M C z A] assms by blast
+qed
+
+section \<open>Theorem B.9: Fixpoint Closure\<close>
+
+lemma Lam_usubst:
+  fixes V :: "'a::var term"
+  assumes "x \<noteq> f" and "x \<notin> FVars V"
+  shows "(Lam x M)[V <- f] = Lam x (M[V <- f])"
+proof -
+  obtain g where g: "g \<notin> FVars M \<union> FVars V \<union> {x, f}"
+    using fresh_finite[of "FVars M \<union> FVars V \<union> {x, f}"] by auto
+  have "(Fix g x M)[V <- f] = Fix g x (M[V <- f])"
+    by (rule usubst_simps(7)) (use assms g in auto)
+  moreover have "Lam x M = Fix g x M" by (rule Lam_eq) (use g in auto)
+  moreover have "Lam x (M[V <- f]) = Fix g x (M[V <- f])"
+    by (rule Lam_eq) (use g in \<open>auto simp: FVars_usubst split: if_splits\<close>)
+  ultimately show ?thesis by simp
+qed
+
+lemma fixapp_closed: "FVars M \<subseteq> {f, x} \<Longrightarrow> FVars (fixapp n f x M) = {}"
+  using FVars_fixapp[of n f x M] by auto
+
+lemma divt_not_reaches_val: "divt \<rightarrow>* V \<Longrightarrow> \<not> val V"
+  using divt_not_normalizes vals_are_normal unfolding normalizes_def by blast
+
+theorem b9_To:
+  fixes M :: "'a::var term"
+  assumes fx: "f \<noteq> x" and cl: "FVars M \<subseteq> {f, x}" and sA: "safe (To A B)"
+    and H: "\<And>V :: 'a term. val V \<Longrightarrow> FVars V = {} \<Longrightarrow> V \<in> \<lblot>To A B\<rblot> \<Longrightarrow>
+      Lam x (M[V <- f]) \<in> \<lblot>To A B\<rblot>"
+  shows "Fix f x M \<in> \<T>\<^sub>\<bottom>\<lblot>To A B\<rblot>"
+proof (rule ccontr)
+  assume nin: "Fix f x M \<notin> \<T>\<^sub>\<bottom>\<lblot>To A B\<rblot>"
+  have clF: "FVars (Fix f x M) = {}" using cl by auto
+  obtain n0 where n0: "\<forall>n\<ge>n0. \<forall>Q. apx n (Fix f x M) Q \<longrightarrow> Q \<notin> \<T>\<^sub>\<bottom>\<lblot>To A B\<rblot>"
+    using b8_induction(1)[OF sA clF nin] by blast
+  have all: "fixapp n f x M \<in> \<lblot>To A B\<rblot>" for n
+  proof (induction n)
+    case 0
+    obtain g where g: "g \<noteq> x" using fresh_finite[of "{x}"] by auto
+    have Le: "Lam x divt = Fix g x (divt :: 'a term)"
+      by (rule Lam_eq) (use g in auto)
+    have bodyprop: "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow> U \<in> \<lblot>A\<rblot> \<longrightarrow>
+      divt[U <- x][Fix g x divt <- g] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+      by (auto simp: subst_idle divt_diverge)
+    show ?case unfolding fixapp.simps(1) Le type_semantics.simps
+      using bodyprop by blast
+  next
+    case (Suc n)
+    have clfa: "FVars (fixapp n f x M) = {}" by (rule fixapp_closed[OF cl])
+    show ?case unfolding fixapp.simps(2)
+      by (rule H[OF val_fixapp clfa Suc.IH])
+  qed
+  have "apx n0 (Fix f x M) (fixapp n0 f x M)" by (rule apx.apx_Ax[OF cl fx]) simp
+  then have "fixapp n0 f x M \<notin> \<T>\<^sub>\<bottom>\<lblot>To A B\<rblot>" using n0 by blast
+  moreover have "fixapp n0 f x M \<in> \<T>\<^sub>\<bottom>\<lblot>To A B\<rblot>"
+    using val_in_taubot[OF val_fixapp all] by blast
+  ultimately show False by blast
+qed
+
+theorem b9_OnlyTo:
+  fixes M :: "'a::var term"
+  assumes fx: "f \<noteq> x" and cl: "FVars M \<subseteq> {f, x}" and sA: "safe (OnlyTo A B)"
+    and H: "\<And>V :: 'a term. val V \<Longrightarrow> FVars V = {} \<Longrightarrow> V \<in> \<lblot>OnlyTo A B\<rblot> \<Longrightarrow>
+      Lam x (M[V <- f]) \<in> \<lblot>OnlyTo A B\<rblot>"
+  shows "Fix f x M \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo A B\<rblot>"
+proof (rule ccontr)
+  assume nin: "Fix f x M \<notin> \<T>\<^sub>\<bottom>\<lblot>OnlyTo A B\<rblot>"
+  have clF: "FVars (Fix f x M) = {}" using cl by auto
+  obtain n0 where n0: "\<forall>n\<ge>n0. \<forall>Q. apx n (Fix f x M) Q \<longrightarrow> Q \<notin> \<T>\<^sub>\<bottom>\<lblot>OnlyTo A B\<rblot>"
+    using b8_induction(1)[OF sA clF nin] by blast
+  have all: "fixapp n f x M \<in> \<lblot>OnlyTo A B\<rblot>" for n
+  proof (induction n)
+    case 0
+    obtain g where g: "g \<noteq> x" using fresh_finite[of "{x}"] by auto
+    have Le: "Lam x divt = Fix g x (divt :: 'a term)"
+      by (rule Lam_eq) (use g in auto)
+    have bodyprop: "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow>
+      divt[U <- x][Fix g x divt <- g] \<in> \<T>\<lblot>B\<rblot> \<longrightarrow> U \<in> \<lblot>A\<rblot>"
+      by (auto simp: subst_idle dest: divt_not_reaches_val)
+    show ?case unfolding fixapp.simps(1) Le type_semantics.simps
+      using bodyprop by blast
+  next
+    case (Suc n)
+    have clfa: "FVars (fixapp n f x M) = {}" by (rule fixapp_closed[OF cl])
+    show ?case unfolding fixapp.simps(2)
+      by (rule H[OF val_fixapp clfa Suc.IH])
+  qed
+  have "apx n0 (Fix f x M) (fixapp n0 f x M)" by (rule apx.apx_Ax[OF cl fx]) simp
+  then have "fixapp n0 f x M \<notin> \<T>\<^sub>\<bottom>\<lblot>OnlyTo A B\<rblot>" using n0 by blast
+  moreover have "fixapp n0 f x M \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo A B\<rblot>"
+    using val_in_taubot[OF val_fixapp all] by blast
+  ultimately show False by blast
+qed
+
+section \<open>Theorem 4.8: Semantic Soundness — infrastructure\<close>
+
+subsection \<open>Properties of valuations\<close>
+
+lemma eval_Cons: "eval (p # ps) M = eval ps (M[snd p <- fst p])"
+  by (cases p) simp
+
+lemma cvs_Nil[simp]: "closed_val_subst []"
+  by (simp add: closed_val_subst_def)
+
+lemma cvs_Cons: "closed_val_subst (p # \<theta>) \<longleftrightarrow>
+  val (snd p) \<and> FVars (snd p) = {} \<and> closed_val_subst \<theta>"
+  by (auto simp: closed_val_subst_def)
+
+lemma eval_closed: "FVars M = {} \<Longrightarrow> eval \<theta> M = M"
+  by (induction \<theta>) (auto simp: eval_Cons subst_idle)
+
+lemma eval_Zero[simp]: "eval \<theta> Zero = Zero"
+  by (induction \<theta>) (auto simp: eval_Cons)
+
+lemma eval_Succ[simp]: "eval \<theta> (Succ M) = Succ (eval \<theta> M)"
+  by (induction \<theta> arbitrary: M) (auto simp: eval_Cons)
+
+lemma eval_Pred[simp]: "eval \<theta> (Pred M) = Pred (eval \<theta> M)"
+  by (induction \<theta> arbitrary: M) (auto simp: eval_Cons)
+
+lemma eval_If[simp]: "eval \<theta> (If M N P) = If (eval \<theta> M) (eval \<theta> N) (eval \<theta> P)"
+  by (induction \<theta> arbitrary: M N P) (auto simp: eval_Cons)
+
+lemma eval_App[simp]: "eval \<theta> (App M N) = App (eval \<theta> M) (eval \<theta> N)"
+  by (induction \<theta> arbitrary: M N) (auto simp: eval_Cons)
+
+lemma eval_Pair[simp]: "eval \<theta> (term.Pair M N) = term.Pair (eval \<theta> M) (eval \<theta> N)"
+  by (induction \<theta> arbitrary: M N) (auto simp: eval_Cons)
+
+lemma eval_Var:
+  "closed_val_subst \<theta> \<Longrightarrow>
+   eval \<theta> (Var v) = Var v \<or> (val (eval \<theta> (Var v)) \<and> FVars (eval \<theta> (Var v)) = {})"
+  by (induction \<theta> arbitrary: v)
+    (auto simp: eval_Cons cvs_Cons eval_closed)
+
+lemma eval_Fix:
+  "closed_val_subst \<theta> \<Longrightarrow> {f, x} \<inter> fst ` set \<theta> = {} \<Longrightarrow>
+   eval \<theta> (Fix f x M) = Fix f x (eval \<theta> M)"
+proof (induction \<theta> arbitrary: M)
+  case Nil then show ?case by simp
+next
+  case (Cons p \<theta>)
+  have "(Fix f x M)[snd p <- fst p] = Fix f x (M[snd p <- fst p])"
+    by (rule usubst_simps(7)) (use Cons.prems in \<open>auto simp: cvs_Cons\<close>)
+  then show ?case using Cons by (simp add: eval_Cons cvs_Cons)
+qed
+
+lemma eval_Let:
+  "closed_val_subst \<theta> \<Longrightarrow> dset xy \<inter> fst ` set \<theta> = {} \<Longrightarrow>
+   eval \<theta> (term.Let xy M N) = term.Let xy (eval \<theta> M) (eval \<theta> N)"
+proof (induction \<theta> arbitrary: M N)
+  case Nil then show ?case by simp
+next
+  case (Cons p \<theta>)
+  have "(term.Let xy M N)[snd p <- fst p] = term.Let xy (M[snd p <- fst p]) (N[snd p <- fst p])"
+    by (rule usubst_Let) (use Cons.prems in \<open>auto simp: cvs_Cons\<close>)
+  then show ?case using Cons by (simp add: eval_Cons cvs_Cons)
+qed
+
+lemma eval_usubst:
+  "closed_val_subst \<theta> \<Longrightarrow> y \<notin> fst ` set \<theta> \<Longrightarrow> FVars V = {} \<Longrightarrow>
+   eval \<theta> (M[V <- y]) = (eval \<theta> M)[V <- y]"
+proof (induction \<theta> arbitrary: M)
+  case Nil then show ?case by simp
+next
+  case (Cons p \<theta>)
+  have "M[V <- y][snd p <- fst p] = M[snd p <- fst p][V[snd p <- fst p] <- y]"
+    by (rule usubst_usubst) (use Cons.prems in \<open>auto simp: cvs_Cons\<close>)
+  also have "\<dots> = M[snd p <- fst p][V <- y]"
+    using Cons.prems(3) by (simp add: subst_idle)
+  finally show ?case using Cons by (simp add: eval_Cons cvs_Cons)
+qed
+
+lemma FVars_eval: "closed_val_subst \<theta> \<Longrightarrow> FVars (eval \<theta> M) \<subseteq> FVars M"
+proof (induction \<theta> arbitrary: M)
+  case Nil then show ?case by simp
+next
+  case (Cons p \<theta>)
+  have "FVars (M[snd p <- fst p]) \<subseteq> FVars M"
+    using Cons.prems by (auto simp: FVars_usubst cvs_Cons split: if_splits)
+  then show ?case using Cons by (fastforce simp: eval_Cons cvs_Cons)
+qed
+
+lemma cvs_filter: "closed_val_subst \<theta> \<Longrightarrow> closed_val_subst (filter Q \<theta>)"
+  by (auto simp: closed_val_subst_def)
+
+lemma eval_filter:
+  "closed_val_subst \<theta> \<Longrightarrow> FVars M \<subseteq> S \<Longrightarrow>
+   eval (filter (\<lambda>p. fst p \<in> S) \<theta>) M = eval \<theta> M"
+proof (induction \<theta> arbitrary: M)
+  case Nil then show ?case by simp
+next
+  case (Cons p \<theta>)
+  show ?case
+  proof (cases "fst p \<in> S")
+    case True
+    have "FVars (M[snd p <- fst p]) \<subseteq> S"
+      using Cons.prems by (auto simp: FVars_usubst cvs_Cons split: if_splits)
+    then show ?thesis using Cons True by (simp add: eval_Cons cvs_Cons)
+  next
+    case False
+    then have "fst p \<notin> FVars M" using Cons.prems(2) by auto
+    then have "M[snd p <- fst p] = M" by (rule subst_idle)
+    then show ?thesis using Cons False by (simp add: eval_Cons cvs_Cons)
+  qed
+qed
+
+subsection \<open>Divergence propagation and evaluation inversions\<close>
+
+lemma div_Succ: "diverge A \<Longrightarrow> diverge (Succ (A::'a::var term))"
+proof -
+  assume d: "diverge A"
+  obtain h where h: "h \<notin> FVars (A::'a term)" by (meson arb_element finite_FVars)
+  have ctx: "eval_ctx h (Succ (Var h))" by (rule eval_ctx.intros(4)[OF eval_ctx.intros(1)])
+  show ?thesis using div_ctx[OF ctx d] by simp
+qed
+
+lemma div_Pred: "diverge A \<Longrightarrow> diverge (Pred (A::'a::var term))"
+proof -
+  assume d: "diverge A"
+  obtain h where h: "h \<notin> FVars (A::'a term)" by (meson arb_element finite_FVars)
+  have ctx: "eval_ctx h (Pred (Var h))" by (rule eval_ctx.intros(5)[OF eval_ctx.intros(1)])
+  show ?thesis using div_ctx[OF ctx d] by simp
+qed
+
+lemma div_If: "diverge A \<Longrightarrow> diverge (If (A::'a::var term) N P)"
+proof -
+  assume d: "diverge A"
+  obtain h where h: "h \<notin> FVars (A::'a term) \<union> FVars N \<union> FVars P"
+    by (meson arb_element finite_FVars finite_UnI)
+  have ctx: "eval_ctx h (If (Var h) N P)"
+    by (rule eval_ctx.intros(9)[OF eval_ctx.intros(1)]) (use h in auto)
+  show ?thesis using div_ctx[OF ctx d] h by (auto simp: subst_idle)
+qed
+
+lemma div_App1: "diverge A \<Longrightarrow> diverge (App (A::'a::var term) N)"
+proof -
+  assume d: "diverge A"
+  obtain h where h: "h \<notin> FVars (A::'a term) \<union> FVars N"
+    by (meson arb_element finite_FVars finite_UnI)
+  have ctx: "eval_ctx h (App (Var h) N)"
+    by (rule eval_ctx.intros(3)[OF eval_ctx.intros(1)]) (use h in auto)
+  show ?thesis using div_ctx[OF ctx d] h by (auto simp: subst_idle)
+qed
+
+lemma div_AppFix2: "diverge B \<Longrightarrow> diverge (App (Fix g y R) (B::'a::var term))"
+proof -
+  assume d: "diverge B"
+  obtain h where h: "h \<notin> FVars (B::'a term) \<union> FVars R"
+    by (meson arb_element finite_FVars finite_UnI)
+  have ctx: "eval_ctx h (App (Fix g y R) (Var h))"
+    by (rule eval_ctx.intros(2)[OF eval_ctx.intros(1)]) (use h in auto)
+  have "(App (Fix g y R) (Var h))[B <- h] = App (Fix g y R) B"
+    using h by (auto simp: subst_idle)
+  then show ?thesis using div_ctx[OF ctx d] by simp
+qed
+
+lemma div_Let1: "diverge A \<Longrightarrow> diverge (term.Let xy (A::'a::var term) N)"
+proof -
+  assume d: "diverge A"
+  obtain xy' N' where eq: "term.Let xy A N = term.Let xy' A N'"
+    and dd: "dset xy' \<inter> FVars A = {}"
+    using Let_refresh[of "FVars A" xy A N] finite_FVars by blast
+  obtain h where h: "h \<notin> FVars (A::'a term) \<union> FVars N' \<union> dset xy'"
+    by (meson arb_element finite_FVars finite_dset finite_UnI)
+  have ctx: "eval_ctx h (term.Let xy' (Var h) N')"
+    by (rule eval_ctx.intros(8)[OF eval_ctx.intros(1)]) (use h in auto)
+  have peq: "(term.Let xy' (Var h) N')[A <- h] = term.Let xy' A N'"
+    using usubst_Let[of h xy' A "Var h" N'] h dd by (auto simp: subst_idle)
+  show ?thesis unfolding eq using div_ctx[OF ctx d, unfolded peq] .
+qed
+
+lemma normal_betas: "W \<rightarrow>[k] N \<Longrightarrow> normal W \<Longrightarrow> N = W"
+  by (induction rule: betas.induct) (auto simp: normal_def)
+
+lemma beta_star_pass:
+  fixes M :: "'a::var term"
+  assumes MW: "M \<rightarrow>* W" and nW: "normal W" and MN: "M \<rightarrow>* N"
+  shows "N \<rightarrow>* W"
+proof -
+  obtain a where a: "M \<rightarrow>[a] W" using MW beta_star_def by blast
+  obtain b where b: "M \<rightarrow>[b] N" using MN beta_star_def by blast
+  show ?thesis
+  proof (cases "b \<le> a")
+    case True
+    then show ?thesis using betas_prefix[OF b a] beta_star_def by blast
+  next
+    case False
+    then have "W \<rightarrow>[b - a] N" using betas_prefix[OF a b] by simp
+    then have "N = W" using normal_betas nW by blast
+    then show ?thesis using beta_star_def betas.refl by blast
+  qed
+qed
+
+lemma App2_betas: "N \<rightarrow>[k] N' \<Longrightarrow> App (Fix g y R) N \<rightarrow>[k] App (Fix g y R) N'"
+  by (induction rule: betas.induct) (auto intro: betas.intros beta.OrdApp2)
+
+lemma App2_beta_star: "N \<rightarrow>* N' \<Longrightarrow> App (Fix g y R) N \<rightarrow>* App (Fix g y R) N'"
+  using App2_betas beta_star_def by metis
+
+lemma Succ_betas_inv:
+  fixes A :: "'a::var term"
+  shows "X \<rightarrow>[k] W \<Longrightarrow> X = Succ A \<Longrightarrow> val W \<Longrightarrow> \<exists>V. W = Succ V \<and> A \<rightarrow>* V \<and> num V"
+proof (induction arbitrary: A rule: betas.induct)
+  case (refl M)
+  then show ?case using val_Succ_num beta_star_def betas.refl by blast
+next
+  case (step M N k P)
+  from step.hyps(1)[unfolded step.prems(1)] show ?case
+  proof (cases rule: beta.cases)
+    case (OrdSucc M0 M0')
+    obtain V where "P = Succ V" "M0' \<rightarrow>* V" "num V"
+      using step.IH[OF _ step.prems(2)] OrdSucc by blast
+    then show ?thesis
+      using OrdSucc beta_star_def betas.step by (metis term.inject(1))
+  qed (auto simp: step.prems)
+qed
+
+lemma Pred_betas_inv:
+  fixes A :: "'a::var term"
+  shows "X \<rightarrow>[k] W \<Longrightarrow> X = Pred A \<Longrightarrow> val W \<Longrightarrow> \<exists>V. A \<rightarrow>* V \<and> num V"
+proof (induction arbitrary: A rule: betas.induct)
+  case (refl M)
+  then show ?case using not_val_Pred by blast
+next
+  case (step M N k P)
+  from step.hyps(1)[unfolded step.prems(1)] show ?case
+  proof (cases rule: beta.cases)
+    case (OrdPred M0 M0')
+    obtain V where "M0' \<rightarrow>* V" "num V"
+      using step.IH[OF _ step.prems(2)] OrdPred by blast
+    then show ?thesis
+      using OrdPred beta_star_def betas.step by (metis term.inject(2))
+  next
+    case PredZ
+    then show ?thesis using beta_star_def betas.refl num.intros(1)
+      by (metis term.inject(2))
+  next
+    case PredS
+    then show ?thesis using beta_star_def betas.refl num.intros(2)
+      by (metis term.inject(2))
+  qed (auto simp: step.prems)
+qed
+
+lemma Pair_betas_inv:
+  fixes A B :: "'a::var term"
+  shows "X \<rightarrow>[k] W \<Longrightarrow> X = term.Pair A B \<Longrightarrow> val W \<Longrightarrow>
+    \<exists>V1 V2. W = term.Pair V1 V2 \<and> A \<rightarrow>* V1 \<and> B \<rightarrow>* V2 \<and> val V1 \<and> val V2"
+proof (induction arbitrary: A B rule: betas.induct)
+  case (refl M)
+  then show ?case using val_Pair_D beta_star_def betas.refl by blast
+next
+  case (step M N k P)
+  from step.hyps(1)[unfolded step.prems(1)] show ?case
+  proof (cases rule: beta.cases)
+    case (OrdPair1 M0 M0' N0)
+    obtain V1 V2 where "P = term.Pair V1 V2" "M0' \<rightarrow>* V1" "N0 \<rightarrow>* V2" "val V1" "val V2"
+      using step.IH[OF _ step.prems(2)] OrdPair1 by blast
+    then show ?thesis
+      using OrdPair1 beta_star_def betas.step by (metis term.inject(7))
+  next
+    case (OrdPair2 V0 N0 N0')
+    obtain V1 V2 where "P = term.Pair V1 V2" "V0 \<rightarrow>* V1" "N0' \<rightarrow>* V2" "val V1" "val V2"
+      using step.IH[OF _ step.prems(2)] OrdPair2 by blast
+    then show ?thesis
+      using OrdPair2 beta_star_def betas.step by (metis term.inject(7))
+  qed (auto simp: step.prems)
+qed
+
+lemma If_betas_inv:
+  fixes A N P :: "'a::var term"
+  shows "X \<rightarrow>[k] W \<Longrightarrow> X = If A N P \<Longrightarrow> val W \<Longrightarrow>
+    \<exists>nv. num nv \<and> A \<rightarrow>* nv \<and> ((nv = Zero \<and> N \<rightarrow>* W) \<or> ((\<exists>m. nv = Succ m) \<and> P \<rightarrow>* W))"
+proof (induction arbitrary: A N P rule: betas.induct)
+  case (refl M)
+  then show ?case using not_val_If by blast
+next
+  case (step M N0 k P0)
+  from step.hyps(1)[unfolded step.prems(1)] show ?case
+  proof (cases rule: beta.cases)
+    case (OrdIf Ma M' Na Pa)
+    obtain nv where "num nv" "M' \<rightarrow>* nv"
+      "((nv = Zero \<and> Na \<rightarrow>* P0) \<or> ((\<exists>m. nv = Succ m) \<and> Pa \<rightarrow>* P0))"
+      using step.IH[OF _ step.prems(2)] OrdIf by blast
+    then show ?thesis
+      using OrdIf beta_star_def betas.step by (metis term.inject(3))
+  next
+    case (Ifz Pa)
+    then show ?thesis
+      using step.hyps(2) beta_star_def betas.refl num.intros(1)
+      by (metis term.inject(3))
+  next
+    case (Ifs n Na)
+    then show ?thesis
+      using step.hyps(2) beta_star_def betas.refl num.intros(2)
+      by (metis term.inject(3))
+  qed (auto simp: step.prems)
+qed
+
+lemma App_betas_inv:
+  fixes A B :: "'a::var term"
+  shows "X \<rightarrow>[k] W \<Longrightarrow> X = App A B \<Longrightarrow> val W \<Longrightarrow>
+    \<exists>g y R V. A \<rightarrow>* Fix g y R \<and> B \<rightarrow>* V \<and> val V \<and> g \<notin> FVars V \<and>
+      R[V <- y][Fix g y R <- g] \<rightarrow>* W"
+proof (induction arbitrary: A B rule: betas.induct)
+  case (refl M)
+  then show ?case using not_val_App by blast
+next
+  case (step M N k P)
+  from step.hyps(1)[unfolded step.prems(1)] show ?case
+  proof (cases rule: beta.cases)
+    case (OrdApp2 N0 N0' f0 x0 M0)
+    obtain g y R V where "Fix f0 x0 M0 \<rightarrow>* Fix g y R" "N0' \<rightarrow>* V" "val V" "g \<notin> FVars V"
+      "R[V <- y][Fix g y R <- g] \<rightarrow>* P"
+      using step.IH[OF _ step.prems(2)] OrdApp2 by blast
+    then show ?thesis
+      using OrdApp2 beta_star_def betas.step by (metis term.inject(5))
+  next
+    case (OrdApp1 M0 M0' N0)
+    obtain g y R V where "M0' \<rightarrow>* Fix g y R" "N0 \<rightarrow>* V" "val V" "g \<notin> FVars V"
+      "R[V <- y][Fix g y R <- g] \<rightarrow>* P"
+      using step.IH[OF _ step.prems(2)] OrdApp1 by blast
+    then show ?thesis
+      using OrdApp1 beta_star_def betas.step by (metis term.inject(5))
+  next
+    case (FixBeta V0 f0 x0 M0)
+    have AB: "A = Fix f0 x0 M0" "B = V0" using FixBeta(1) by auto
+    have r1: "A \<rightarrow>* Fix f0 x0 M0" and r2: "B \<rightarrow>* V0"
+      unfolding AB using beta_star_def betas.refl by blast+
+    have "M0[V0 <- x0][Fix f0 x0 M0 <- f0] \<rightarrow>* P"
+      using FixBeta(2) step.hyps(2) beta_star_def by blast
+    then show ?thesis using r1 r2 FixBeta(3,4) by blast
+  qed (auto simp: step.prems)
+qed
+
+lemma Let_betas_inv:
+  fixes A B :: "'a::var term"
+  shows "X \<rightarrow>[k] W \<Longrightarrow> X = term.Let xy A B \<Longrightarrow> val W \<Longrightarrow>
+    \<exists>V1 V2. A \<rightarrow>* term.Pair V1 V2 \<and> val V1 \<and> val V2"
+proof (induction arbitrary: xy A B rule: betas.induct)
+  case (refl M)
+  then show ?case using not_val_Let by blast
+next
+  case (step M N k P)
+  from step.hyps(1)[unfolded step.prems(1)] show ?case
+  proof (cases rule: beta.cases)
+    case (OrdLet M0 M0' xy0 N0)
+    have A0: "M0 = A" using OrdLet(1) unfolding term.inject(8) by auto
+    obtain V1 V2 where "M0' \<rightarrow>* term.Pair V1 V2" "val V1" "val V2"
+      using step.IH[OF OrdLet(2) step.prems(2)] by blast
+    then show ?thesis
+      using OrdLet(3) A0 beta_star_def betas.step by metis
+  next
+    case (Let V0 W0 xy0 M0)
+    have "A = term.Pair V0 W0" using Let(1) unfolding term.inject(8) by auto
+    then show ?thesis using Let(3,4) beta_star_def betas.refl by metis
+  qed (auto simp: step.prems)
+qed
+
+subsection \<open>Semantic helper lemmas\<close>
+
+lemma val_taubot_iff: "val V \<Longrightarrow> (V \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>) = (V \<in> \<lblot>A\<rblot>)"
+  using val_tau_iff val_not_diverge by auto
+
+lemma tau_backward:
+  assumes "M \<rightarrow>* N" and "N \<in> \<T>\<lblot>A\<rblot>" shows "M \<in> \<T>\<lblot>A\<rblot>"
+proof -
+  obtain V where "V \<in> \<lblot>A\<rblot>" "N \<rightarrow>* V" "val V" using assms(2) by auto
+  then show ?thesis using beta_star_sums[OF assms(1)] by auto
+qed
+
+lemma taubot_backward:
+  assumes "M \<rightarrow>* N" and "N \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>" shows "M \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+  using assms tau_backward[OF assms(1)] beta_star_diverge_back[OF assms(1)] by auto
+
+lemma tau_forward:
+  fixes M :: "'a::var term"
+  assumes "M \<rightarrow>* N" and "M \<in> \<T>\<lblot>A\<rblot>"
+  shows "N \<in> \<T>\<lblot>A\<rblot>"
+proof -
+  obtain V where V: "V \<in> \<lblot>A\<rblot>" "M \<rightarrow>* V" "val V" using assms(2) by auto
+  have "N \<rightarrow>* V" using beta_star_pass[OF V(2) vals_are_normal[OF V(3)] assms(1)] .
+  then show ?thesis using V by auto
+qed
+
+lemma disjoint_sem: "A || B \<Longrightarrow> V \<in> \<lblot>A\<rblot> \<Longrightarrow> V \<in> \<lblot>B\<rblot> \<Longrightarrow> False"
+proof (induction arbitrary: V rule: disjunction.induct)
+  case 1
+  then have "num V" and "is_Pair V" using Prod_is_Pair by auto
+  then show ?case by (cases rule: num.cases) auto
+next
+  case 2
+  then have "num V" and "is_Fix V" using To_is_Fix by auto
+  then show ?case by (cases rule: num.cases) auto
+next
+  case 3
+  then have "num V" and "is_Fix V" using OnlyTo_is_Fix by auto
+  then show ?case by (cases rule: num.cases) auto
+next
+  case 4
+  then have "is_Pair V" and "is_Fix V" using Prod_is_Pair To_is_Fix by auto
+  then show ?case by (auto simp: is_Pair_def is_Fix_def)
+next
+  case 5
+  then have "is_Pair V" and "is_Fix V" using Prod_is_Pair OnlyTo_is_Fix by auto
+  then show ?case by (auto simp: is_Pair_def is_Fix_def)
+next
+  case 6
+  then show ?case by blast
+qed
+
+lemma fix_in_OnlyTo_Ok:
+  fixes F :: "'a::var term"
+  assumes "is_Fix F"
+  shows "F \<in> \<lblot>OnlyTo Ok A\<rblot>"
+proof -
+  obtain g y R where Fe: "F = Fix g y R" using assms unfolding is_Fix_def by blast
+  have "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow> R[U <- y][Fix g y R <- g] \<in> \<T>\<lblot>A\<rblot> \<longrightarrow> U \<in> \<lblot>Ok\<rblot>"
+    by (auto simp: Vals0_def)
+  then show ?thesis unfolding Fe type_semantics.simps by blast
+qed
+
+lemma dfst_neq_dsnd: "dfst xy \<noteq> dsnd xy"
+  by transfer auto
+
+lemma num_Pred:
+  fixes n :: "'a::var term"
+  assumes "num n"
+  shows "\<exists>m. num m \<and> Pred n \<rightarrow> m"
+  using assms by (cases rule: num.cases) (auto intro: beta.PredZ beta.PredS num.intros)
+
+
+subsection \<open>Semantic content of the individual typing rules\<close>
+
+lemma tau_dest:
+  fixes M :: "'a::var term"
+  assumes "M \<in> \<T>\<lblot>A\<rblot>"
+  obtains W where "M \<rightarrow>* W" and "val W" and "W \<in> \<lblot>A\<rblot>"
+  using assms by auto
+
+lemma tau_intro: "M \<rightarrow>* W \<Longrightarrow> val W \<Longrightarrow> W \<in> \<lblot>A\<rblot> \<Longrightarrow> M \<in> \<T>\<lblot>A\<rblot>"
+  by auto
+
+lemma tau_unique:
+  fixes M :: "'a::var term"
+  assumes "M \<in> \<T>\<lblot>A\<rblot>" and "M \<rightarrow>* W" and "val W"
+  shows "W \<in> \<lblot>A\<rblot>"
+proof -
+  obtain W' where W': "M \<rightarrow>* W'" "val W'" "W' \<in> \<lblot>A\<rblot>" using assms(1) by auto
+  have "W = W'"
+    using beta_star_normal_unique assms(2,3) W'(1,2) vals_are_normal
+    unfolding beta_star_def by blast
+  then show ?thesis using W'(3) by simp
+qed
+
+lemma sem_Succ_Nat:
+  fixes M :: "'a::var term"
+  assumes "M \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+  shows "Succ M \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+proof -
+  from assms consider (v) "M \<in> \<T>\<lblot>Nat\<rblot>" | (d) "M \<Up>" by auto
+  then show ?thesis
+  proof cases
+    case v
+    then obtain n where "M \<rightarrow>* n" "num n" by auto
+    then have "Succ M \<rightarrow>* Succ n" "num (Succ n)"
+      using Succ_beta_star num.intros(2) by auto
+    then show ?thesis using val.intros(2) by auto
+  next
+    case d
+    then show ?thesis using div_Succ by auto
+  qed
+qed
+
+lemma sem_Pred_Nat:
+  fixes M :: "'a::var term"
+  assumes "M \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+  shows "Pred M \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+proof -
+  from assms consider (v) "M \<in> \<T>\<lblot>Nat\<rblot>" | (d) "M \<Up>" by auto
+  then show ?thesis
+  proof cases
+    case v
+    then obtain n where n: "M \<rightarrow>* n" "num n" by auto
+    obtain m where m: "num m" "Pred n \<rightarrow> m" using num_Pred[OF n(2)] by blast
+    have "Pred M \<rightarrow>* m"
+      using Pred_beta_star[OF n(1)] m(2) beta_star_sums beta_star_def
+        betas.step betas.refl by metis
+    then show ?thesis using m(1) val.intros(2) by auto
+  next
+    case d
+    then show ?thesis using div_Pred by auto
+  qed
+qed
+
+lemma sem_Pair:
+  fixes M N :: "'a::var term"
+  assumes "M \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>" and "N \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+  shows "term.Pair M N \<in> \<T>\<^sub>\<bottom>\<lblot>Prod A B\<rblot>"
+proof (cases "M \<Up>")
+  case True
+  then show ?thesis using Pair_div by auto
+next
+  case False
+  then have "M \<in> \<T>\<lblot>A\<rblot>" using assms(1) by auto
+  then obtain V where V: "M \<rightarrow>* V" "val V" "V \<in> \<lblot>A\<rblot>" by (rule tau_dest)
+  show ?thesis
+  proof (cases "N \<Up>")
+    case True
+    have "term.Pair M N \<rightarrow>* term.Pair V N"
+      using Pair_beta_star[OF V(1) _ V(2)] beta_star_def betas.refl by blast
+    then show ?thesis
+      using beta_star_diverge_back Pair_div2[OF V(2) True] by auto
+  next
+    case False
+    then have "N \<in> \<T>\<lblot>B\<rblot>" using assms(2) by auto
+    then obtain W where W: "N \<rightarrow>* W" "val W" "W \<in> \<lblot>B\<rblot>" by (rule tau_dest)
+    have "term.Pair M N \<rightarrow>* term.Pair V W" by (rule Pair_beta_star[OF V(1) W(1) V(2)])
+    moreover have "term.Pair V W \<in> \<lblot>Prod A B\<rblot>" using V(3) W(3) by auto
+    ultimately have "term.Pair M N \<in> \<T>\<lblot>Prod A B\<rblot>"
+      using val.intros(3)[OF V(2) W(2)] by (blast intro: tau_intro)
+    then show ?thesis by auto
+  qed
+qed
+
+lemma sem_If:
+  fixes M N P :: "'a::var term"
+  assumes "M \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>" and "N \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>" and "P \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+  shows "If M N P \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+proof (cases "M \<Up>")
+  case True
+  then show ?thesis using div_If by auto
+next
+  case False
+  then have "M \<in> \<T>\<lblot>Nat\<rblot>" using assms(1) by auto
+  then obtain n where n: "M \<rightarrow>* n" "num n" by auto
+  have steps: "If M N P \<rightarrow>* If n N P" by (rule If_beta_star[OF n(1)])
+  show ?thesis
+  proof (cases rule: num.cases[OF n(2)])
+    case 1
+    have "If n N P \<rightarrow> N" unfolding 1 by (rule beta.Ifz)
+    then have "If M N P \<rightarrow>* N"
+      using steps beta_star_sums beta_star_def betas.step betas.refl by metis
+    then show ?thesis using assms(2) taubot_backward by blast
+  next
+    case (2 m)
+    have "If n N P \<rightarrow> P" unfolding 2 by (rule beta.Ifs) (use 2 in simp)
+    then have "If M N P \<rightarrow>* P"
+      using steps beta_star_sums beta_star_def betas.step betas.refl by metis
+    then show ?thesis using assms(3) taubot_backward by blast
+  qed
+qed
+
+lemma sem_App:
+  fixes M N :: "'a::var term"
+  assumes M: "M \<in> \<T>\<^sub>\<bottom>\<lblot>To B A\<rblot>" and N: "N \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>" and clN: "FVars N = {}"
+  shows "App M N \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+proof (cases "M \<Up>")
+  case True
+  then show ?thesis using div_App1 by auto
+next
+  case False
+  then have "M \<in> \<T>\<lblot>To B A\<rblot>" using M by auto
+  then obtain F where F: "M \<rightarrow>* F" "val F" "F \<in> \<lblot>To B A\<rblot>" by (rule tau_dest)
+  obtain g y R where Fe: "F = Fix g y R" using To_is_Fix[OF F(3)] unfolding is_Fix_def by blast
+  have stepsM: "App M N \<rightarrow>* App (Fix g y R) N" using App_beta_star[OF F(1)] Fe by simp
+  show ?thesis
+  proof (cases "N \<Up>")
+    case True
+    show ?thesis
+      using beta_star_diverge_back[OF stepsM div_AppFix2[OF True]] by auto
+  next
+    case False
+    then have "N \<in> \<T>\<lblot>B\<rblot>" using N by auto
+    then obtain V where V: "N \<rightarrow>* V" "val V" "V \<in> \<lblot>B\<rblot>" by (rule tau_dest)
+    have clV: "FVars V = {}" using FVars_beta_star V(1) clN by auto
+    have steps2: "App (Fix g y R) N \<rightarrow>* App (Fix g y R) V" by (rule App2_beta_star[OF V(1)])
+    have "App (Fix g y R) V \<rightarrow> R[V <- y][Fix g y R <- g]"
+      by (rule beta.FixBeta[OF V(2)]) (use clV in simp)
+    then have steps3: "App M N \<rightarrow>* R[V <- y][Fix g y R <- g]"
+      using stepsM steps2 beta_star_sums beta_star_def betas.step betas.refl by metis
+    have "R[V <- y][Fix g y R <- g] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+      using To_unfold[OF F(3)[unfolded Fe] V(2) clV V(3) HOL.refl] .
+    then show ?thesis using taubot_backward[OF steps3] by blast
+  qed
+qed
+
+lemma sem_Let:
+  fixes M N :: "'a::var term"
+  assumes M: "M \<in> \<T>\<^sub>\<bottom>\<lblot>Prod B C\<rblot>" and clM: "FVars M = {}"
+    and body: "\<And>V W. val V \<Longrightarrow> val W \<Longrightarrow> FVars V = {} \<Longrightarrow> FVars W = {} \<Longrightarrow>
+      V \<in> \<lblot>B\<rblot> \<Longrightarrow> W \<in> \<lblot>C\<rblot> \<Longrightarrow> N[V <- dfst xy][W <- dsnd xy] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+  shows "term.Let xy M N \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+proof (cases "M \<Up>")
+  case True
+  then show ?thesis using div_Let1 by auto
+next
+  case False
+  then have "M \<in> \<T>\<lblot>Prod B C\<rblot>" using M by auto
+  then obtain P where P: "M \<rightarrow>* P" "val P" "P \<in> \<lblot>Prod B C\<rblot>" by (rule tau_dest)
+  obtain V W where Pe: "P = term.Pair V W" and V: "V \<in> \<lblot>B\<rblot>" and W: "W \<in> \<lblot>C\<rblot>"
+    using P(3) by auto
+  have vV: "val V" and vW: "val W" using val_Pair_D P(2) Pe by auto
+  have clP: "FVars P = {}" using FVars_beta_star P(1) clM by auto
+  then have clV: "FVars V = {}" and clW: "FVars W = {}" unfolding Pe by auto
+  have steps: "term.Let xy M N \<rightarrow>* term.Let xy (term.Pair V W) N"
+    using Let_beta_star[OF P(1)] Pe by simp
+  have "term.Let xy (term.Pair V W) N \<rightarrow> N[V <- dfst xy][W <- dsnd xy]"
+    by (rule beta.Let[OF vV vW]) (use clV in simp)
+  then have steps2: "term.Let xy M N \<rightarrow>* N[V <- dfst xy][W <- dsnd xy]"
+    using steps beta_star_sums beta_star_def betas.step betas.refl by metis
+  show ?thesis
+    using taubot_backward[OF steps2 body[OF vV vW clV clW V W]] .
+qed
+
+lemma ext_Succ:
+  fixes M :: "'a::var term"
+  assumes "Succ M \<in> \<T>\<lblot>A\<rblot>"
+  shows "M \<in> \<T>\<lblot>Nat\<rblot>"
+proof -
+  obtain W where W: "Succ M \<rightarrow>* W" "val W" using assms by auto
+  obtain V where "M \<rightarrow>* V" "num V"
+    using Succ_betas_inv W beta_star_def by blast
+  then show ?thesis using val.intros(2) by auto
+qed
+
+lemma ext_Pred:
+  fixes M :: "'a::var term"
+  assumes "Pred M \<in> \<T>\<lblot>A\<rblot>"
+  shows "M \<in> \<T>\<lblot>Nat\<rblot>"
+proof -
+  obtain W where W: "Pred M \<rightarrow>* W" "val W" using assms by auto
+  obtain V where "M \<rightarrow>* V" "num V"
+    using Pred_betas_inv W beta_star_def by blast
+  then show ?thesis using val.intros(2) by auto
+qed
+
+lemma ext_If1:
+  fixes M :: "'a::var term"
+  assumes "If M N P \<in> \<T>\<lblot>A\<rblot>"
+  shows "M \<in> \<T>\<lblot>Nat\<rblot>"
+proof -
+  obtain W where W: "If M N P \<rightarrow>* W" "val W" using assms by auto
+  obtain nv where "num nv" "M \<rightarrow>* nv"
+    using If_betas_inv W beta_star_def by blast
+  then show ?thesis using val.intros(2) by auto
+qed
+
+lemma ext_If2:
+  fixes M :: "'a::var term"
+  assumes "If M N P \<in> \<T>\<lblot>A\<rblot>"
+  shows "N \<in> \<T>\<lblot>A\<rblot> \<or> P \<in> \<T>\<lblot>A\<rblot>"
+proof -
+  obtain W where W: "If M N P \<rightarrow>* W" "val W" "W \<in> \<lblot>A\<rblot>"
+    using assms by (rule tau_dest)
+  obtain k where k: "If M N P \<rightarrow>[k] W" using W(1) beta_star_def by blast
+  obtain nv :: "'a term" where "(nv = Zero \<and> N \<rightarrow>* W) \<or> (\<exists>m. nv = Succ m) \<and> P \<rightarrow>* W"
+    using If_betas_inv[OF k HOL.refl W(2)] by blast
+  then show ?thesis using W(2,3) by (auto intro: tau_intro)
+qed
+
+lemma ext_Pair:
+  fixes M N :: "'a::var term"
+  assumes "term.Pair M N \<in> \<T>\<lblot>Prod A B\<rblot>"
+  shows "M \<in> \<T>\<lblot>A\<rblot> \<and> N \<in> \<T>\<lblot>B\<rblot>"
+proof -
+  obtain W where W: "term.Pair M N \<rightarrow>* W" "val W" "W \<in> \<lblot>Prod A B\<rblot>"
+    using assms by (rule tau_dest)
+  obtain V1 V2 where V: "W = term.Pair V1 V2" "M \<rightarrow>* V1" "N \<rightarrow>* V2" "val V1" "val V2"
+    using Pair_betas_inv W(1,2) beta_star_def by blast
+  have "V1 \<in> \<lblot>A\<rblot>" "V2 \<in> \<lblot>B\<rblot>" using W(3) unfolding V(1) by auto
+  then show ?thesis using V by auto
+qed
+
+lemma ext_Pair_Ok:
+  fixes M N :: "'a::var term"
+  assumes "term.Pair M N \<in> \<T>\<lblot>A\<rblot>"
+  shows "M \<in> \<T>\<lblot>Ok\<rblot> \<and> N \<in> \<T>\<lblot>Ok\<rblot>"
+proof -
+  obtain W where W: "term.Pair M N \<rightarrow>* W" "val W" using assms by auto
+  obtain V1 V2 where V: "M \<rightarrow>* V1" "N \<rightarrow>* V2" "val V1" "val V2"
+    using Pair_betas_inv W beta_star_def by blast
+  then show ?thesis by (auto simp: Vals0_def)
+qed
+
+lemma ext_App_fix:
+  fixes M N :: "'a::var term"
+  assumes "App M N \<in> \<T>\<lblot>A\<rblot>"
+  shows "M \<in> \<T>\<lblot>OnlyTo Ok B\<rblot>"
+proof -
+  obtain W where W: "App M N \<rightarrow>* W" "val W" using assms by auto
+  obtain k where k: "App M N \<rightarrow>[k] W" using W(1) beta_star_def by blast
+  obtain g y R where "M \<rightarrow>* Fix g y R"
+    using App_betas_inv[OF k HOL.refl W(2)] by blast
+  then show ?thesis
+    using fix_in_OnlyTo_Ok[of "Fix g y R"] val.intros(4) by (auto intro: tau_intro)
+qed
+
+lemma ext_App2_Ok:
+  fixes M N :: "'a::var term"
+  assumes "App M N \<in> \<T>\<lblot>A\<rblot>"
+  shows "N \<in> \<T>\<lblot>Ok\<rblot>"
+proof -
+  obtain W where W: "App M N \<rightarrow>* W" "val W" using assms by auto
+  obtain V where "N \<rightarrow>* V" "val V"
+    using App_betas_inv W beta_star_def by blast
+  then show ?thesis by (auto simp: Vals0_def)
+qed
+
+lemma ext_AppL:
+  fixes M N :: "'a::var term"
+  assumes MN: "App M N \<in> \<T>\<lblot>A\<rblot>" and M: "M \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo B A\<rblot>" and clN: "FVars N = {}"
+  shows "N \<in> \<T>\<lblot>B\<rblot>"
+proof -
+  obtain W where W: "App M N \<rightarrow>* W" "val W" "W \<in> \<lblot>A\<rblot>" using MN by (rule tau_dest)
+  obtain k where k: "App M N \<rightarrow>[k] W" using W(1) beta_star_def by blast
+  obtain g y R V where inv: "M \<rightarrow>* Fix g y R" "N \<rightarrow>* V" "val V"
+    "R[V <- y][Fix g y R <- g] \<rightarrow>* W"
+    using App_betas_inv[OF k HOL.refl W(2)] by blast
+  have clV: "FVars V = {}" using FVars_beta_star inv(2) clN by auto
+  have "\<not> M \<Up>"
+    using inv(1) vals_are_normal val.intros(4) diverge_xor_normalizes
+    unfolding normalizes_def by blast
+  then have "M \<in> \<T>\<lblot>OnlyTo B A\<rblot>" using M by auto
+  then have Fmem: "Fix g y R \<in> \<lblot>OnlyTo B A\<rblot>"
+    using tau_unique inv(1) val.intros(4) by blast
+  have "R[V <- y][Fix g y R <- g] \<in> \<T>\<lblot>A\<rblot>"
+    using inv(4) W(2,3) by (auto intro: tau_intro)
+  then have "V \<in> \<lblot>B\<rblot>" using OnlyTo_unfold[OF Fmem inv(3) clV HOL.refl] by blast
+  then show ?thesis using inv(2,3) by (auto intro: tau_intro)
+qed
+
+lemma ext_Let:
+  fixes M N :: "'a::var term"
+  assumes L: "term.Let xy M N \<in> \<T>\<lblot>A\<rblot>" and clM: "FVars M = {}"
+  shows "\<exists>V W. M \<rightarrow>* term.Pair V W \<and> val V \<and> val W \<and> FVars V = {} \<and> FVars W = {} \<and>
+    N[V <- dfst xy][W <- dsnd xy] \<in> \<T>\<lblot>A\<rblot>"
+proof -
+  obtain Wf where Wf: "term.Let xy M N \<rightarrow>* Wf" "val Wf" "Wf \<in> \<lblot>A\<rblot>" using L by (rule tau_dest)
+  obtain k where k: "term.Let xy M N \<rightarrow>[k] Wf" using Wf(1) beta_star_def by blast
+  obtain V W where VW: "M \<rightarrow>* term.Pair V W" "val V" "val W"
+    using Let_betas_inv[OF k HOL.refl Wf(2)] by blast
+  have clVW: "FVars (term.Pair V W) = {}" using FVars_beta_star[OF VW(1)] clM by auto
+  then have clV: "FVars V = {}" and clW: "FVars W = {}" by auto
+  have steps: "term.Let xy M N \<rightarrow>* term.Let xy (term.Pair V W) N"
+    using Let_beta_star[OF VW(1)] by simp
+  have "term.Let xy (term.Pair V W) N \<rightarrow> N[V <- dfst xy][W <- dsnd xy]"
+    by (rule beta.Let[OF VW(2,3)]) (use clV in simp)
+  then have steps2: "term.Let xy M N \<rightarrow>* N[V <- dfst xy][W <- dsnd xy]"
+    using steps beta_star_sums beta_star_def betas.step betas.refl by metis
+  have "N[V <- dfst xy][W <- dsnd xy] \<rightarrow>* Wf"
+    using beta_star_pass[OF Wf(1) vals_are_normal[OF Wf(2)] steps2] .
+  then have "N[V <- dfst xy][W <- dsnd xy] \<in> \<T>\<lblot>A\<rblot>"
+    using Wf(2,3) by (auto intro: tau_intro)
+  then show ?thesis using VW clV clW by blast
+qed
+
+subsection \<open>Valuation bookkeeping\<close>
+
+lemma semantic_judgementI:
+  assumes "\<And>\<theta>. closed_val_subst \<theta> \<Longrightarrow> closes \<theta> (L |\<union>| R) \<Longrightarrow>
+    (\<forall>\<tau>. \<tau> |\<in>| L \<longrightarrow> satL \<theta> \<tau>) \<Longrightarrow> \<exists>\<tau>. \<tau> |\<in>| R \<and> satR \<theta> \<tau>"
+  shows "L \<Turnstile> R"
+  using assms unfolding semantic_judgement_def by blast
+
+lemma semantic_judgementD:
+  "L \<Turnstile> R \<Longrightarrow> closed_val_subst \<theta> \<Longrightarrow> closes \<theta> (L |\<union>| R) \<Longrightarrow>
+   (\<forall>\<tau>. \<tau> |\<in>| L \<longrightarrow> satL \<theta> \<tau>) \<Longrightarrow> \<exists>\<tau>. \<tau> |\<in>| R \<and> satR \<theta> \<tau>"
+  unfolding semantic_judgement_def by blast
+
+lemma satL_pair[simp]: "satL \<theta> (M :. A) \<longleftrightarrow> eval \<theta> M \<in> \<T>\<lblot>A\<rblot>"
+  by (simp add: satL_def)
+
+lemma satR_pair[simp]: "satR \<theta> (M :. A) \<longleftrightarrow> eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+  by (simp add: satR_def)
+
+lemma satL_satR: "satL \<theta> \<tau> \<Longrightarrow> satR \<theta> \<tau>"
+  by (auto simp: satL_def satR_def)
+
+lemma closes_finsert[simp]: "closes \<theta> ((M :. A) ; G) \<longleftrightarrow>
+  FVars (eval \<theta> M) = {} \<and> closes \<theta> G"
+  by (auto simp: closes_def)
+
+lemma closes_union[simp]: "closes \<theta> (G |\<union>| H) \<longleftrightarrow> closes \<theta> G \<and> closes \<theta> H"
+  by (auto simp: closes_def)
+
+lemma closes_member: "closes \<theta> G \<Longrightarrow> (M :. A) |\<in>| G \<Longrightarrow> FVars (eval \<theta> M) = {}"
+  unfolding closes_def by (metis fst_conv)
+
+lemma FVarsC_member: "(M :. A) |\<in>| G \<Longrightarrow> FVars M \<subseteq> FVarsC G"
+  unfolding FVarsC_def by force
+
+lemma eval_Cons_Var_same: "FVars V = {} \<Longrightarrow> eval ((v, V) # \<theta>) (Var v) = V"
+  by (simp add: eval_Cons eval_closed)
+
+lemma eval_Cons_idle: "v \<notin> FVars M \<Longrightarrow> eval ((v, V) # \<theta>) M = eval \<theta> M"
+  by (simp add: eval_Cons subst_idle)
+
+lemma eval_Cons2_subst:
+  fixes M :: "'a::var term"
+  assumes cvs: "closed_val_subst \<theta>" and f: "f \<notin> fst ` set \<theta>" and x: "x \<notin> fst ` set \<theta>"
+    and fx: "f \<noteq> x" and clV: "FVars V = {}" and clW: "FVars W = {}"
+  shows "eval ((f, V) # (x, W) # \<theta>) M = (eval \<theta> M)[V <- f][W <- x]"
+proof -
+  have "eval ((f, V) # (x, W) # \<theta>) M = eval \<theta> (M[V <- f][W <- x])"
+    by (simp add: eval_Cons)
+  also have "\<dots> = (eval \<theta> (M[V <- f]))[W <- x]"
+    by (rule eval_usubst[OF cvs x clW])
+  also have "\<dots> = (eval \<theta> M)[V <- f][W <- x]"
+    using eval_usubst[OF cvs f clV] by simp
+  finally show ?thesis .
+qed
+
+
+subsection \<open>The safety-fragment judgement\<close>
+
+text \<open>For Theorem 4.8 we work with a judgement \<open>\<Gamma> \<turnstile>\<^sub>s \<Delta>\<close> that follows the paper's Figure 2
+  faithfully and restricts the two fixpoint rules to the safety fragment (Definition 4.6): the
+  function types introduced by @{text sFixsR}/@{text sFixnR} must be @{const safe}, which for the
+  necessity arrow means a finitely verifiable target. This is slightly more liberal than the
+  paper's fragment (which restricts \<^emph>\<open>all\<close> types in a derivation): safety is only needed where
+  fixpoints are introduced, so soundness of this system subsumes the paper's Theorem 4.8.
+
+  The rules deviate from the @{const judgement} relation defined earlier in this file in the
+  following respects, where the earlier relation disagrees with the paper's Figure 2 (in each case
+  the earlier variant is not semantically sound in the sense of Definition 4.2, which can be
+  checked by direct countermodels):
+  \<^item> in @{text AppR}, @{text LetR} and @{text AppL} the first premise puts the function
+    (resp.\ scrutinee) typing on the \<^emph>\<open>right\<close> of the turnstile, as in the paper, not on the left;
+  \<^item> @{text LetL2} requires \<^emph>\<open>both\<close> projection premises in a single rule (the paper's \<open>\<forall>i\<close>),
+    rather than being split into two rules of one projection each;
+  \<^item> @{text PairL} has both component variants (the paper's \<open>i \<in> {1,2}\<close>);
+  \<^item> the fixpoint rules require the two bound variables to be distinct (the paper's
+    \<open>fix f(x). M\<close> notation presumes this; for \<open>f = x\<close> the semantic argument breaks down).\<close>
+
+inductive sjudgement :: "'var::var typing fset \<Rightarrow> 'var::var typing fset \<Rightarrow> bool" (infix "\<turnstile>\<^sub>s" 10) where
+  sId : "(Var x :. A) ; \<Gamma> \<turnstile>\<^sub>s (Var x :. A) ; \<Delta>"
+| sZeroR : "\<Gamma> \<turnstile>\<^sub>s (Zero :. Nat) ; \<Delta>"
+| sSuccR: "\<Gamma> \<turnstile>\<^sub>s (M :. Nat) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (Succ M :. Nat) ; \<Delta>"
+| sPredR: "\<Gamma> \<turnstile>\<^sub>s (M :. Nat) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (Pred M :. Nat) ; \<Delta>"
+| sFixsR: "safe (To A B) \<Longrightarrow> f \<noteq> x \<Longrightarrow>
+    (Var f :. To A B) ; (Var x :. A) ; \<Gamma> \<turnstile>\<^sub>s (M :. B) ; \<Delta> \<Longrightarrow>
+    {f, x} \<inter> (FVarsC \<Gamma> \<union> FVarsC \<Delta>) = {} \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (Fix f x M :. To A B) ; \<Delta>"
+| sFixnR: "safe (OnlyTo A B) \<Longrightarrow> f \<noteq> x \<Longrightarrow>
+    (Var f :. OnlyTo A B) ; (M :. B) ; \<Gamma> \<turnstile>\<^sub>s (Var x :. A) ; \<Delta> \<Longrightarrow>
+    {f, x} \<inter> (FVarsC \<Gamma> \<union> FVarsC \<Delta>) = {} \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (Fix f x M :. OnlyTo A B) ; \<Delta>"
+| sAppR: "\<Gamma> \<turnstile>\<^sub>s (M :. To B A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (N :. B) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (App M N :. A) ; \<Delta>"
+| sPairR: "\<Gamma> \<turnstile>\<^sub>s (M :. A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (N :. B) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (Pair M N :. Prod A B) ; \<Delta>"
+| sLetR: "\<Gamma> \<turnstile>\<^sub>s (M :. Prod B C) ; \<Delta> \<Longrightarrow>
+    (Var (dfst x) :. B) ; (Var (dsnd x) :. C) ; \<Gamma> \<turnstile>\<^sub>s (N :. A) ; \<Delta> \<Longrightarrow>
+    dset x \<inter> (FVarsC \<Gamma> \<union> FVarsC \<Delta> \<union> FVars M) = {} \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (Let x M N :. A) ; \<Delta>"
+| sIfzR: "\<Gamma> \<turnstile>\<^sub>s (M :. Nat) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (P :. A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (N :. A) ; \<Delta> \<Longrightarrow>
+    \<Gamma> \<turnstile>\<^sub>s (If M N P :. A) ; \<Delta>"
+| sDis: "A || B \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (M :. B) ; \<Delta> \<Longrightarrow> (M :. A); \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sPairL1: "(M :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Pair M N :. Prod A B) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sPairL2: "(N :. B) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Pair M N :. Prod A B) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sAppL: "\<Gamma> \<turnstile>\<^sub>s (M :. OnlyTo B A) ; \<Delta> \<Longrightarrow> (N :. B) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (App M N :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sSuccL: "(M :. Nat) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Succ M :. Nat) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sPredL: "(M :. Nat) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Pred M :. Nat) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sIfzL1: "(M :. Nat) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (If M N P :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sIfzL2: "(N :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (P :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (If M N P :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sLetL1: "(N :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> dset x \<inter> (FVars M \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>) = {} \<Longrightarrow>
+    (Let x M N :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sLetL2: "(M :. Prod B1 B2) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow>
+    (N :. A) ; \<Gamma> \<turnstile>\<^sub>s (Var (dfst x) :. B1) ; \<Delta> \<Longrightarrow>
+    (N :. A) ; \<Gamma> \<turnstile>\<^sub>s (Var (dsnd x) :. B2) ; \<Delta> \<Longrightarrow>
+    dset x \<inter> (FVars M \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>) = {} \<Longrightarrow> (Let x M N :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sOkVarR: "\<Gamma> \<turnstile>\<^sub>s (Var x :. Ok) ; \<Delta>"
+| sOkL: "(M :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (M :. A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sOkR: "\<Gamma> \<turnstile>\<^sub>s (M :. A) ; \<Delta> \<Longrightarrow> \<Gamma> \<turnstile>\<^sub>s (M :. Ok) ; \<Delta>"
+| sOkApL1: "(M :. OnlyTo Ok A) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (App M N :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sOkApL2: "(N :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (App M N :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sOkSL: "(M :. Nat); \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Succ M :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sOkPL: "(M :. Nat) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Pred M :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sOkPrL_1: "(M1 :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Pair M1 M2 :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+| sOkPrL_2: "(M2 :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta> \<Longrightarrow> (Pair M1 M2 :. Ok) ; \<Gamma> \<turnstile>\<^sub>s \<Delta>"
+
+thm sjudgement.induct
+
+
+subsection \<open>Theorem 4.8: Semantic Soundness\<close>
+
+lemma satR_casesD:
+  "(\<exists>\<tau>. \<tau> |\<in>| ((M :. T) ; \<Delta>) \<and> satR \<theta> \<tau>) \<Longrightarrow>
+   eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>T\<rblot> \<or> (\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>)"
+  by auto
+
+lemma exR_head: "satR \<theta> (M :. T) \<Longrightarrow> \<exists>\<tau>. \<tau> |\<in>| ((M :. T) ; \<Delta>) \<and> satR \<theta> \<tau>"
+  by (intro exI[of _ "(M :. T)"] conjI) simp_all
+
+lemma exR_tail: "\<tau> |\<in>| \<Delta> \<Longrightarrow> satR \<theta> \<tau> \<Longrightarrow> \<exists>\<tau>'. \<tau>' |\<in>| ((M :. T) ; \<Delta>) \<and> satR \<theta> \<tau>'"
+  by (intro exI[of _ \<tau>] conjI) simp_all
+
+lemma satL_cong: "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>) \<Longrightarrow> satL \<theta>' \<tau> = satL \<theta> \<tau>"
+  by (simp add: satL_def)
+
+lemma satR_cong: "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>) \<Longrightarrow> satR \<theta>' \<tau> = satR \<theta> \<tau>"
+  by (simp add: satR_def)
+
+lemma FVarsC_member': "\<tau> |\<in>| G \<Longrightarrow> FVars (fst \<tau>) \<subseteq> FVarsC G"
+  unfolding FVarsC_def by force
+
+lemma tau_Ok: "M \<in> \<T>\<lblot>A\<rblot> \<Longrightarrow> M \<in> \<T>\<lblot>Ok\<rblot>"
+  by (auto simp: Vals0_def)
+
+lemma taubot_Ok: "M \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot> \<Longrightarrow> M \<in> \<T>\<^sub>\<bottom>\<lblot>Ok\<rblot>"
+  using tau_Ok by auto
+
+theorem semantic_soundness: \<comment> \<open>Theorem 4.8\<close>
+  fixes \<Gamma> \<Delta> :: "'a::var typing fset"
+  assumes "\<Gamma> \<turnstile>\<^sub>s \<Delta>"
+  shows "\<Gamma> \<Turnstile> \<Delta>"
+  using assms
+proof (induction rule: sjudgement.induct)
+  case (sId x A \<Gamma> \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume "closed_val_subst \<theta>" "closes \<theta> (((Var x :. A) ; \<Gamma>) |\<union>| ((Var x :. A) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((Var x :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "satL \<theta> (Var x :. A)" using satl by auto
+    then have "satR \<theta> (Var x :. A)" by (rule satL_satR)
+    then show "\<exists>\<tau>. \<tau> |\<in>| ((Var x :. A) ; \<Delta>) \<and> satR \<theta> \<tau>" by (rule exR_head)
+  qed
+next
+  case (sZeroR \<Gamma> \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume "closed_val_subst \<theta>" "closes \<theta> (\<Gamma> |\<union>| ((Zero :. Nat) ; \<Delta>))"
+      "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    have "(Zero :: 'a term) \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+      by (intro val_in_taubot) (auto intro: val.intros num.intros)
+    then have "satR \<theta> (Zero :. Nat)" by simp
+    then show "\<exists>\<tau>. \<tau> |\<in>| ((Zero :. Nat) ; \<Delta>) \<and> satR \<theta> \<tau>" by (rule exR_head)
+  qed
+next
+  case (sSuccR \<Gamma> M \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((Succ M :. Nat) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    have clsP: "closes \<theta> (\<Gamma> |\<union>| ((M :. Nat) ; \<Delta>))" using cls by auto
+    from satR_casesD[OF semantic_judgementD[OF sSuccR.IH cvs clsP satl]]
+    show "\<exists>\<tau>. \<tau> |\<in>| ((Succ M :. Nat) ; \<Delta>) \<and> satR \<theta> \<tau>"
+    proof (elim disjE)
+      assume "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+      then have "satR \<theta> (Succ M :. Nat)" using sem_Succ_Nat by simp
+      then show ?thesis by (rule exR_head)
+    qed (blast intro: exR_tail)
+  qed
+next
+  case (sPredR \<Gamma> M \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((Pred M :. Nat) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    have clsP: "closes \<theta> (\<Gamma> |\<union>| ((M :. Nat) ; \<Delta>))" using cls by auto
+    from satR_casesD[OF semantic_judgementD[OF sPredR.IH cvs clsP satl]]
+    show "\<exists>\<tau>. \<tau> |\<in>| ((Pred M :. Nat) ; \<Delta>) \<and> satR \<theta> \<tau>"
+    proof (elim disjE)
+      assume "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+      then have "satR \<theta> (Pred M :. Nat)" using sem_Pred_Nat by simp
+      then show ?thesis by (rule exR_head)
+    qed (blast intro: exR_tail)
+  qed
+next
+  case (sFixsR A B f x \<Gamma> M \<Delta>)
+  note safeT = sFixsR.hyps(1) and fx = sFixsR.hyps(2) and freshGD = sFixsR.hyps(4)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((Fix f x M :. To A B) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    define S where "S = FVars (Fix f x M) \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>"
+    define \<theta>R where "\<theta>R = filter (\<lambda>p. fst p \<in> S) \<theta>"
+    have cvsR: "closed_val_subst \<theta>R" unfolding \<theta>R_def by (rule cvs_filter[OF cvs])
+    have domR: "fst ` set \<theta>R \<subseteq> S" unfolding \<theta>R_def by auto
+    have fS: "f \<notin> S" and xS: "x \<notin> S" using freshGD unfolding S_def by auto
+    have evG: "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evD: "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evF: "eval \<theta>R (Fix f x M) = eval \<theta> (Fix f x M)"
+      unfolding \<theta>R_def by (rule eval_filter[OF cvs]) (auto simp: S_def)
+    have pushF: "eval \<theta>R (Fix f x M) = Fix f x (eval \<theta>R M)"
+      by (rule eval_Fix[OF cvsR]) (use domR fS xS in auto)
+    define B0 where "B0 = eval \<theta>R M"
+    have eqFB: "Fix f x B0 = eval \<theta> (Fix f x M)" unfolding B0_def by (metis evF pushF)
+    have "FVars (Fix f x B0) = {}" unfolding eqFB using cls by auto
+    then have clB0: "FVars B0 \<subseteq> {f, x}" by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| ((Fix f x M :. To A B) ; \<Delta>) \<and> satR \<theta> \<tau>"
+    proof (cases "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>")
+      case True
+      then show ?thesis using exR_tail by blast
+    next
+      case False
+      have Hcol: "B0[V <- f][W <- x] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+        if vV: "val V" and clV: "FVars V = {}" and iV: "V \<in> \<lblot>To A B\<rblot>"
+          and vW: "val W" and clW: "FVars W = {}" and iW: "W \<in> \<lblot>A\<rblot>"
+        for V W :: "'a term"
+      proof -
+        define \<theta>' where "\<theta>' = (f, V) # (x, W) # \<theta>R"
+        have cvs': "closed_val_subst \<theta>'"
+          unfolding \<theta>'_def using cvsR vV clV vW clW by (auto simp: cvs_Cons)
+        have evf: "eval \<theta>' (Var f) = V"
+          unfolding \<theta>'_def by (rule eval_Cons_Var_same[OF clV])
+        have evx: "eval \<theta>' (Var x) = W"
+          unfolding \<theta>'_def using fx clW
+          by (simp add: eval_Cons eval_Cons_Var_same eval_closed)
+        have evM: "eval \<theta>' M = B0[V <- f][W <- x]"
+          unfolding \<theta>'_def B0_def
+          by (rule eval_Cons2_subst[OF cvsR _ _ fx clV clW]) (use domR fS xS in auto)
+        have evG': "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+        proof -
+          fix \<tau> assume m: "\<tau> |\<in>| \<Gamma>"
+          have "f \<notin> FVars (fst \<tau>)" "x \<notin> FVars (fst \<tau>)"
+            using FVarsC_member'[OF m] freshGD by auto
+          then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+            unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+          then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evG[OF m] by simp
+        qed
+        have evD': "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+        proof -
+          fix \<tau> assume m: "\<tau> |\<in>| \<Delta>"
+          have "f \<notin> FVars (fst \<tau>)" "x \<notin> FVars (fst \<tau>)"
+            using FVarsC_member'[OF m] freshGD by auto
+          then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+            unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+          then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evD[OF m] by simp
+        qed
+        have satl': "\<forall>\<tau>. \<tau> |\<in>| ((Var f :. To A B) ; (Var x :. A) ; \<Gamma>) \<longrightarrow> satL \<theta>' \<tau>"
+        proof (intro allI impI)
+          fix \<tau> assume "\<tau> |\<in>| ((Var f :. To A B) ; (Var x :. A) ; \<Gamma>)"
+          then consider "\<tau> = (Var f :. To A B)" | "\<tau> = (Var x :. A)" | "\<tau> |\<in>| \<Gamma>" by auto
+          then show "satL \<theta>' \<tau>"
+          proof cases
+            case 1
+            show ?thesis unfolding 1 satL_pair evf using val_tau_iff[OF vV] iV by blast
+          next
+            case 2
+            show ?thesis unfolding 2 satL_pair evx using val_tau_iff[OF vW] iW by blast
+          next
+            case 3
+            then show ?thesis using satl satL_cong[OF evG'[OF 3]] by blast
+          qed
+        qed
+        have cls': "closes \<theta>' (((Var f :. To A B) ; (Var x :. A) ; \<Gamma>) |\<union>| ((M :. B) ; \<Delta>))"
+        proof -
+          have "FVars (eval \<theta>' (Var f)) = {}" using evf clV by simp
+          moreover have "FVars (eval \<theta>' (Var x)) = {}" using evx clW by simp
+          moreover have "FVars (eval \<theta>' M) = {}"
+            unfolding evM using clB0 clV clW fx by (auto simp: FVars_usubst split: if_splits)
+          moreover have "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+            using evG' cls by (auto simp: closes_def)
+          moreover have "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+            using evD' cls by (auto simp: closes_def)
+          ultimately show ?thesis by (auto simp: closes_def)
+        qed
+        from semantic_judgementD[OF sFixsR.IH cvs' cls' satl']
+        obtain \<tau> where t: "\<tau> |\<in>| ((M :. B) ; \<Delta>)" "satR \<theta>' \<tau>" by blast
+        show ?thesis
+        proof (cases "\<tau> |\<in>| \<Delta>")
+          case True
+          then have "satR \<theta> \<tau>" using t(2) satR_cong[OF evD'[OF True]] by simp
+          then show ?thesis using False True by blast
+        next
+          case False
+          then have "\<tau> = (M :. B)" using t(1) by auto
+          then show ?thesis using t(2) evM by simp
+        qed
+      qed
+      have H: "Lam x (B0[V <- f]) \<in> \<lblot>To A B\<rblot>"
+        if vV: "val V" and clV: "FVars V = {}" and iV: "V \<in> \<lblot>To A B\<rblot>" for V :: "'a term"
+      proof -
+        obtain g where g: "g \<notin> FVars (B0[V <- f]) \<union> {x}"
+          using fresh_finite[of "FVars (B0[V <- f]) \<union> {x}"] by auto
+        have Le: "Lam x (B0[V <- f]) = Fix g x (B0[V <- f])"
+          by (rule Lam_eq) (use g in auto)
+        have bodyprop: "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow> U \<in> \<lblot>A\<rblot> \<longrightarrow>
+          (B0[V <- f])[U <- x][Fix g x (B0[V <- f]) <- g] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+        proof (intro ballI impI)
+          fix U :: "'a term" assume "U \<in> Vals0" and clU: "FVars U = {}" and iU: "U \<in> \<lblot>A\<rblot>"
+          then have vU: "val U" by (simp add: Vals0_def)
+          have "g \<notin> FVars ((B0[V <- f])[U <- x])"
+            using g clU by (auto simp: FVars_usubst split: if_splits)
+          then have "(B0[V <- f])[U <- x][Fix g x (B0[V <- f]) <- g] = (B0[V <- f])[U <- x]"
+            by (rule subst_idle)
+          then show "(B0[V <- f])[U <- x][Fix g x (B0[V <- f]) <- g] \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+            using Hcol[OF vV clV iV vU clU iU] by simp
+        qed
+        show ?thesis unfolding Le type_semantics.simps using bodyprop by blast
+      qed
+      have FB: "Fix f x B0 \<in> \<T>\<^sub>\<bottom>\<lblot>To A B\<rblot>"
+        by (rule b9_To[OF fx clB0 safeT]) (rule H)
+      have "satR \<theta> (Fix f x M :. To A B)"
+        unfolding satR_pair eqFB[symmetric] by (rule FB)
+      then show ?thesis by (rule exR_head)
+    qed
+  qed
+next
+  case (sFixnR A B f x M \<Gamma> \<Delta>)
+  note safeT = sFixnR.hyps(1) and fx = sFixnR.hyps(2) and freshGD = sFixnR.hyps(4)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((Fix f x M :. OnlyTo A B) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    define S where "S = FVars (Fix f x M) \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>"
+    define \<theta>R where "\<theta>R = filter (\<lambda>p. fst p \<in> S) \<theta>"
+    have cvsR: "closed_val_subst \<theta>R" unfolding \<theta>R_def by (rule cvs_filter[OF cvs])
+    have domR: "fst ` set \<theta>R \<subseteq> S" unfolding \<theta>R_def by auto
+    have fS: "f \<notin> S" and xS: "x \<notin> S" using freshGD unfolding S_def by auto
+    have evG: "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evD: "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evF: "eval \<theta>R (Fix f x M) = eval \<theta> (Fix f x M)"
+      unfolding \<theta>R_def by (rule eval_filter[OF cvs]) (auto simp: S_def)
+    have pushF: "eval \<theta>R (Fix f x M) = Fix f x (eval \<theta>R M)"
+      by (rule eval_Fix[OF cvsR]) (use domR fS xS in auto)
+    define B0 where "B0 = eval \<theta>R M"
+    have eqFB: "Fix f x B0 = eval \<theta> (Fix f x M)" unfolding B0_def by (metis evF pushF)
+    have "FVars (Fix f x B0) = {}" unfolding eqFB using cls by auto
+    then have clB0: "FVars B0 \<subseteq> {f, x}" by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| ((Fix f x M :. OnlyTo A B) ; \<Delta>) \<and> satR \<theta> \<tau>"
+    proof (cases "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>")
+      case True
+      then show ?thesis using exR_tail by blast
+    next
+      case False
+      have Hcol: "W \<in> \<lblot>A\<rblot>"
+        if vV: "val V" and clV: "FVars V = {}" and iV: "V \<in> \<lblot>OnlyTo A B\<rblot>"
+          and vW: "val W" and clW: "FVars W = {}"
+          and mem: "B0[V <- f][W <- x] \<in> \<T>\<lblot>B\<rblot>"
+        for V W :: "'a term"
+      proof -
+        define \<theta>' where "\<theta>' = (f, V) # (x, W) # \<theta>R"
+        have cvs': "closed_val_subst \<theta>'"
+          unfolding \<theta>'_def using cvsR vV clV vW clW by (auto simp: cvs_Cons)
+        have evf: "eval \<theta>' (Var f) = V"
+          unfolding \<theta>'_def by (rule eval_Cons_Var_same[OF clV])
+        have evx: "eval \<theta>' (Var x) = W"
+          unfolding \<theta>'_def using fx clW
+          by (simp add: eval_Cons eval_Cons_Var_same eval_closed)
+        have evM: "eval \<theta>' M = B0[V <- f][W <- x]"
+          unfolding \<theta>'_def B0_def
+          by (rule eval_Cons2_subst[OF cvsR _ _ fx clV clW]) (use domR fS xS in auto)
+        have evG': "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+        proof -
+          fix \<tau> assume m: "\<tau> |\<in>| \<Gamma>"
+          have "f \<notin> FVars (fst \<tau>)" "x \<notin> FVars (fst \<tau>)"
+            using FVarsC_member'[OF m] freshGD by auto
+          then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+            unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+          then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evG[OF m] by simp
+        qed
+        have evD': "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+        proof -
+          fix \<tau> assume m: "\<tau> |\<in>| \<Delta>"
+          have "f \<notin> FVars (fst \<tau>)" "x \<notin> FVars (fst \<tau>)"
+            using FVarsC_member'[OF m] freshGD by auto
+          then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+            unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+          then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evD[OF m] by simp
+        qed
+        have satl': "\<forall>\<tau>. \<tau> |\<in>| ((Var f :. OnlyTo A B) ; (M :. B) ; \<Gamma>) \<longrightarrow> satL \<theta>' \<tau>"
+        proof (intro allI impI)
+          fix \<tau> assume "\<tau> |\<in>| ((Var f :. OnlyTo A B) ; (M :. B) ; \<Gamma>)"
+          then consider "\<tau> = (Var f :. OnlyTo A B)" | "\<tau> = (M :. B)" | "\<tau> |\<in>| \<Gamma>" by auto
+          then show "satL \<theta>' \<tau>"
+          proof cases
+            case 1
+            show ?thesis unfolding 1 satL_pair evf using val_tau_iff[OF vV] iV by blast
+          next
+            case 2
+            show ?thesis unfolding 2 satL_pair evM by (rule mem)
+          next
+            case 3
+            then show ?thesis using satl satL_cong[OF evG'[OF 3]] by blast
+          qed
+        qed
+        have cls': "closes \<theta>' (((Var f :. OnlyTo A B) ; (M :. B) ; \<Gamma>) |\<union>| ((Var x :. A) ; \<Delta>))"
+        proof -
+          have "FVars (eval \<theta>' (Var f)) = {}" using evf clV by simp
+          moreover have "FVars (eval \<theta>' (Var x)) = {}" using evx clW by simp
+          moreover have "FVars (eval \<theta>' M) = {}"
+            unfolding evM using clB0 clV clW fx by (auto simp: FVars_usubst split: if_splits)
+          moreover have "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+            using evG' cls by (auto simp: closes_def)
+          moreover have "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+            using evD' cls by (auto simp: closes_def)
+          ultimately show ?thesis by (auto simp: closes_def)
+        qed
+        from semantic_judgementD[OF sFixnR.IH cvs' cls' satl']
+        obtain \<tau> where t: "\<tau> |\<in>| ((Var x :. A) ; \<Delta>)" "satR \<theta>' \<tau>" by blast
+        show ?thesis
+        proof (cases "\<tau> |\<in>| \<Delta>")
+          case True
+          then have "satR \<theta> \<tau>" using t(2) satR_cong[OF evD'[OF True]] by simp
+          then show ?thesis using False True by blast
+        next
+          case False
+          then have "\<tau> = (Var x :. A)" using t(1) by auto
+          then have "W \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>" using t(2) evx by simp
+          then show ?thesis using val_taubot_iff[OF vW] by simp
+        qed
+      qed
+      have H: "Lam x (B0[V <- f]) \<in> \<lblot>OnlyTo A B\<rblot>"
+        if vV: "val V" and clV: "FVars V = {}" and iV: "V \<in> \<lblot>OnlyTo A B\<rblot>" for V :: "'a term"
+      proof -
+        obtain g where g: "g \<notin> FVars (B0[V <- f]) \<union> {x}"
+          using fresh_finite[of "FVars (B0[V <- f]) \<union> {x}"] by auto
+        have Le: "Lam x (B0[V <- f]) = Fix g x (B0[V <- f])"
+          by (rule Lam_eq) (use g in auto)
+        have bodyprop: "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow>
+          (B0[V <- f])[U <- x][Fix g x (B0[V <- f]) <- g] \<in> \<T>\<lblot>B\<rblot> \<longrightarrow> U \<in> \<lblot>A\<rblot>"
+        proof (intro ballI impI)
+          fix U :: "'a term" assume "U \<in> Vals0" and clU: "FVars U = {}"
+            and mem: "(B0[V <- f])[U <- x][Fix g x (B0[V <- f]) <- g] \<in> \<T>\<lblot>B\<rblot>"
+          then have vU: "val U" by (simp add: Vals0_def)
+          have "g \<notin> FVars ((B0[V <- f])[U <- x])"
+            using g clU by (auto simp: FVars_usubst split: if_splits)
+          then have "(B0[V <- f])[U <- x][Fix g x (B0[V <- f]) <- g] = (B0[V <- f])[U <- x]"
+            by (rule subst_idle)
+          then show "U \<in> \<lblot>A\<rblot>"
+            using Hcol[OF vV clV iV vU clU] mem by simp
+        qed
+        show ?thesis unfolding Le type_semantics.simps using bodyprop by blast
+      qed
+      have FB: "Fix f x B0 \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo A B\<rblot>"
+        by (rule b9_OnlyTo[OF fx clB0 safeT]) (rule H)
+      have "satR \<theta> (Fix f x M :. OnlyTo A B)"
+        unfolding satR_pair eqFB[symmetric] by (rule FB)
+      then show ?thesis by (rule exR_head)
+    qed
+  qed
+next
+  case (sAppR \<Gamma> M B A \<Delta> N)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((App M N :. A) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    show "\<exists>\<tau>. \<tau> |\<in>| ((App M N :. A) ; \<Delta>) \<and> satR \<theta> \<tau>"
+    proof (cases "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>")
+      case True
+      then show ?thesis using exR_tail by blast
+    next
+      case False
+      have clsM: "closes \<theta> (\<Gamma> |\<union>| ((M :. To B A) ; \<Delta>))" using cls by auto
+      have clsN: "closes \<theta> (\<Gamma> |\<union>| ((N :. B) ; \<Delta>))" using cls by auto
+      have M: "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>To B A\<rblot>"
+        using satR_casesD[OF semantic_judgementD[OF sAppR.IH(1) cvs clsM satl]] False by blast
+      have N: "eval \<theta> N \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+        using satR_casesD[OF semantic_judgementD[OF sAppR.IH(2) cvs clsN satl]] False by blast
+      have clN: "FVars (eval \<theta> N) = {}" using cls by auto
+      have "satR \<theta> (App M N :. A)" using sem_App[OF M N clN] by simp
+      then show ?thesis by (rule exR_head)
+    qed
+  qed
+next
+  case (sPairR \<Gamma> M A \<Delta> N B)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((Pair M N :. Prod A B) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    show "\<exists>\<tau>. \<tau> |\<in>| ((term.Pair M N :. Prod A B) ; \<Delta>) \<and> satR \<theta> \<tau>"
+    proof (cases "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>")
+      case True
+      then show ?thesis using exR_tail by blast
+    next
+      case False
+      have clsM: "closes \<theta> (\<Gamma> |\<union>| ((M :. A) ; \<Delta>))" using cls by auto
+      have clsN: "closes \<theta> (\<Gamma> |\<union>| ((N :. B) ; \<Delta>))" using cls by auto
+      have M: "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+        using satR_casesD[OF semantic_judgementD[OF sPairR.IH(1) cvs clsM satl]] False by blast
+      have N: "eval \<theta> N \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+        using satR_casesD[OF semantic_judgementD[OF sPairR.IH(2) cvs clsN satl]] False by blast
+      have "satR \<theta> (term.Pair M N :. Prod A B)" using sem_Pair[OF M N] by simp
+      then show ?thesis by (rule exR_head)
+    qed
+  qed
+next
+  case (sLetR \<Gamma> M B C \<Delta> x N A)
+  note freshGD = sLetR.hyps(3)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((term.Let x M N :. A) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    define S where "S = FVars (term.Let x M N) \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>"
+    define \<theta>R where "\<theta>R = filter (\<lambda>p. fst p \<in> S) \<theta>"
+    have cvsR: "closed_val_subst \<theta>R" unfolding \<theta>R_def by (rule cvs_filter[OF cvs])
+    have domR: "fst ` set \<theta>R \<subseteq> S" unfolding \<theta>R_def by auto
+    have dS: "dset x \<inter> S = {}" using freshGD unfolding S_def by auto
+    have evG: "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evD: "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evL: "eval \<theta>R (term.Let x M N) = eval \<theta> (term.Let x M N)"
+      unfolding \<theta>R_def by (rule eval_filter[OF cvs]) (auto simp: S_def)
+    have evMag: "eval \<theta>R M = eval \<theta> M"
+      unfolding \<theta>R_def by (rule eval_filter[OF cvs]) (auto simp: S_def)
+    have pushL: "eval \<theta>R (term.Let x M N) = term.Let x (eval \<theta>R M) (eval \<theta>R N)"
+      by (rule eval_Let[OF cvsR]) (use domR dS in auto)
+    have clLet: "FVars (eval \<theta>R (term.Let x M N)) = {}" using cls evL by auto
+    have clM: "FVars (eval \<theta>R M) = {}" using clLet pushL by auto
+    have clN: "FVars (eval \<theta>R N) \<subseteq> dset x" using clLet pushL by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| ((term.Let x M N :. A) ; \<Delta>) \<and> satR \<theta> \<tau>"
+    proof (cases "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>")
+      case True
+      then show ?thesis using exR_tail by blast
+    next
+      case False
+      have noD: "\<not> (\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta>R \<tau>)"
+        using False satR_cong evD by blast
+      have clsM': "closes \<theta>R (\<Gamma> |\<union>| ((M :. Prod B C) ; \<Delta>))"
+        using cls evG evD evMag clM by (auto simp: closes_def)
+      have satlR: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta>R \<tau>"
+        using satl satL_cong evG by blast
+      have Mmem: "eval \<theta>R M \<in> \<T>\<^sub>\<bottom>\<lblot>Prod B C\<rblot>"
+        using satR_casesD[OF semantic_judgementD[OF sLetR.IH(1) cvsR clsM' satlR]] noD by blast
+      have body: "(eval \<theta>R N)[V <- dfst x][W <- dsnd x] \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+        if vV: "val V" and vW: "val W" and clV: "FVars V = {}" and clW: "FVars W = {}"
+          and iV: "V \<in> \<lblot>B\<rblot>" and iW: "W \<in> \<lblot>C\<rblot>"
+        for V W :: "'a term"
+      proof -
+        define \<theta>' where "\<theta>' = (dfst x, V) # (dsnd x, W) # \<theta>R"
+        have cvs': "closed_val_subst \<theta>'"
+          unfolding \<theta>'_def using cvsR vV clV vW clW by (auto simp: cvs_Cons)
+        have evfst: "eval \<theta>' (Var (dfst x)) = V"
+          unfolding \<theta>'_def by (rule eval_Cons_Var_same[OF clV])
+        have evsnd: "eval \<theta>' (Var (dsnd x)) = W"
+          unfolding \<theta>'_def using dfst_neq_dsnd[of x] clW
+          by (simp add: eval_Cons eval_Cons_Var_same eval_closed)
+        have dfstR: "dfst x \<notin> fst ` set \<theta>R" and dsndR: "dsnd x \<notin> fst ` set \<theta>R"
+          using domR dS dsel_dset[of x] by blast+
+        have evN: "eval \<theta>' N = (eval \<theta>R N)[V <- dfst x][W <- dsnd x]"
+          unfolding \<theta>'_def
+          by (rule eval_Cons2_subst[OF cvsR dfstR dsndR dfst_neq_dsnd clV clW])
+        have evG': "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+        proof -
+          fix \<tau> assume m: "\<tau> |\<in>| \<Gamma>"
+          have "dfst x \<notin> FVars (fst \<tau>)" "dsnd x \<notin> FVars (fst \<tau>)"
+            using FVarsC_member'[OF m] freshGD dsel_dset[of x] by blast+
+          then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+            unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+          then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evG[OF m] by simp
+        qed
+        have evD': "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+        proof -
+          fix \<tau> assume m: "\<tau> |\<in>| \<Delta>"
+          have "dfst x \<notin> FVars (fst \<tau>)" "dsnd x \<notin> FVars (fst \<tau>)"
+            using FVarsC_member'[OF m] freshGD dsel_dset[of x] by blast+
+          then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+            unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+          then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evD[OF m] by simp
+        qed
+        have satl': "\<forall>\<tau>. \<tau> |\<in>| ((Var (dfst x) :. B) ; (Var (dsnd x) :. C) ; \<Gamma>) \<longrightarrow> satL \<theta>' \<tau>"
+        proof (intro allI impI)
+          fix \<tau> assume "\<tau> |\<in>| ((Var (dfst x) :. B) ; (Var (dsnd x) :. C) ; \<Gamma>)"
+          then consider "\<tau> = (Var (dfst x) :. B)" | "\<tau> = (Var (dsnd x) :. C)" | "\<tau> |\<in>| \<Gamma>" by auto
+          then show "satL \<theta>' \<tau>"
+          proof cases
+            case 1
+            show ?thesis unfolding 1 satL_pair evfst using val_tau_iff[OF vV] iV by blast
+          next
+            case 2
+            show ?thesis unfolding 2 satL_pair evsnd using val_tau_iff[OF vW] iW by blast
+          next
+            case 3
+            then show ?thesis using satl satL_cong[OF evG'[OF 3]] by blast
+          qed
+        qed
+        have cls': "closes \<theta>' (((Var (dfst x) :. B) ; (Var (dsnd x) :. C) ; \<Gamma>) |\<union>| ((N :. A) ; \<Delta>))"
+        proof -
+          have "FVars (eval \<theta>' (Var (dfst x))) = {}" using evfst clV by simp
+          moreover have "FVars (eval \<theta>' (Var (dsnd x))) = {}" using evsnd clW by simp
+          moreover have "FVars (eval \<theta>' N) = {}"
+            unfolding evN using clN clV clW dfst_neq_dsnd[of x] dset_alt[of x]
+            by (auto simp: FVars_usubst split: if_splits)
+          moreover have "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+            using evG' cls by (auto simp: closes_def)
+          moreover have "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+            using evD' cls by (auto simp: closes_def)
+          ultimately show ?thesis by (auto simp: closes_def)
+        qed
+        from semantic_judgementD[OF sLetR.IH(2) cvs' cls' satl']
+        obtain \<tau> where t: "\<tau> |\<in>| ((N :. A) ; \<Delta>)" "satR \<theta>' \<tau>" by blast
+        show ?thesis
+        proof (cases "\<tau> |\<in>| \<Delta>")
+          case True
+          then have "satR \<theta> \<tau>" using t(2) satR_cong[OF evD'[OF True]] by simp
+          then show ?thesis using False True by blast
+        next
+          case False
+          then have "\<tau> = (N :. A)" using t(1) by auto
+          then show ?thesis using t(2) evN by simp
+        qed
+      qed
+      have SL: "term.Let x (eval \<theta>R M) (eval \<theta>R N) \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+        by (rule sem_Let[OF Mmem clM]) (rule body)
+      have eqL: "term.Let x (eval \<theta>R M) (eval \<theta>R N) = eval \<theta> (term.Let x M N)"
+        by (metis evL pushL)
+      have "satR \<theta> (term.Let x M N :. A)"
+        unfolding satR_pair eqL[symmetric] by (rule SL)
+      then show ?thesis by (rule exR_head)
+    qed
+  qed
+next
+  case (sIfzR \<Gamma> M \<Delta> P A N)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((If M N P :. A) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    show "\<exists>\<tau>. \<tau> |\<in>| ((If M N P :. A) ; \<Delta>) \<and> satR \<theta> \<tau>"
+    proof (cases "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>")
+      case True
+      then show ?thesis using exR_tail by blast
+    next
+      case False
+      have clsM: "closes \<theta> (\<Gamma> |\<union>| ((M :. Nat) ; \<Delta>))" using cls by auto
+      have clsN: "closes \<theta> (\<Gamma> |\<union>| ((N :. A) ; \<Delta>))" using cls by auto
+      have clsP: "closes \<theta> (\<Gamma> |\<union>| ((P :. A) ; \<Delta>))" using cls by auto
+      have M: "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+        using satR_casesD[OF semantic_judgementD[OF sIfzR.IH(1) cvs clsM satl]] False by blast
+      have P: "eval \<theta> P \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+        using satR_casesD[OF semantic_judgementD[OF sIfzR.IH(2) cvs clsP satl]] False by blast
+      have N: "eval \<theta> N \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+        using satR_casesD[OF semantic_judgementD[OF sIfzR.IH(3) cvs clsN satl]] False by blast
+      have "satR \<theta> (If M N P :. A)" using sem_If[OF M N P] by simp
+      then show ?thesis by (rule exR_head)
+    qed
+  qed
+next
+  case (sDis A B \<Gamma> M \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((M :. A) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((M :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have satlG: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have MA: "eval \<theta> M \<in> \<T>\<lblot>A\<rblot>" using satl by auto
+    have clsP: "closes \<theta> (\<Gamma> |\<union>| ((M :. B) ; \<Delta>))" using cls by auto
+    from satR_casesD[OF semantic_judgementD[OF sDis.IH cvs clsP satlG]]
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+    proof (elim disjE)
+      assume MB: "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>B\<rblot>"
+      obtain V where V: "eval \<theta> M \<rightarrow>* V" "val V" "V \<in> \<lblot>A\<rblot>" using MA by (rule tau_dest)
+      have "\<not> (eval \<theta> M) \<Up>"
+        using V(1,2) vals_are_normal diverge_xor_normalizes normalizes_def by blast
+      then have "eval \<theta> M \<in> \<T>\<lblot>B\<rblot>" using MB by auto
+      then have "V \<in> \<lblot>B\<rblot>" using tau_unique V(1,2) by blast
+      then have False using disjoint_sem[OF sDis.hyps(1) V(3)] by blast
+      then show ?thesis ..
+    qed blast
+  qed
+next
+  case (sPairL1 M A \<Gamma> \<Delta> N B)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((Pair M N :. Prod A B) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((Pair M N :. Prod A B) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (term.Pair M N) \<in> \<T>\<lblot>Prod A B\<rblot>" using satl by auto
+    then have "eval \<theta> M \<in> \<T>\<lblot>A\<rblot>" unfolding eval_Pair using ext_Pair by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M :. A) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sPairL1.IH cvs clsP satlP] .
+  qed
+next
+  case (sPairL2 N B \<Gamma> \<Delta> M A)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((Pair M N :. Prod A B) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((Pair M N :. Prod A B) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (term.Pair M N) \<in> \<T>\<lblot>Prod A B\<rblot>" using satl by auto
+    then have "eval \<theta> N \<in> \<T>\<lblot>B\<rblot>" unfolding eval_Pair using ext_Pair by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((N :. B) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((N :. B) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sPairL2.IH cvs clsP satlP] .
+  qed
+next
+  case (sAppL \<Gamma> M B A \<Delta> N)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((App M N :. A) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((App M N :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have satlG: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have head: "eval \<theta> (App M N) \<in> \<T>\<lblot>A\<rblot>" using satl by auto
+    have clsM: "closes \<theta> (\<Gamma> |\<union>| ((M :. OnlyTo B A) ; \<Delta>))" using cls by auto
+    from satR_casesD[OF semantic_judgementD[OF sAppL.IH(1) cvs clsM satlG]]
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+    proof (elim disjE)
+      assume Mm: "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo B A\<rblot>"
+      have clN: "FVars (eval \<theta> N) = {}" using cls by auto
+      have "eval \<theta> N \<in> \<T>\<lblot>B\<rblot>"
+        using ext_AppL[OF _ Mm clN] head by simp
+      then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((N :. B) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satlG by auto
+      have clsP: "closes \<theta> (((N :. B) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+      show ?thesis using semantic_judgementD[OF sAppL.IH(2) cvs clsP satlP] .
+    qed blast
+  qed
+next
+  case (sSuccL M \<Gamma> \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((Succ M :. Nat) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((Succ M :. Nat) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (Succ M) \<in> \<T>\<lblot>Nat\<rblot>" using satl by auto
+    then have "eval \<theta> M \<in> \<T>\<lblot>Nat\<rblot>" unfolding eval_Succ using ext_Succ by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M :. Nat) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M :. Nat) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sSuccL.IH cvs clsP satlP] .
+  qed
+next
+  case (sPredL M \<Gamma> \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((Pred M :. Nat) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((Pred M :. Nat) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (Pred M) \<in> \<T>\<lblot>Nat\<rblot>" using satl by auto
+    then have "eval \<theta> M \<in> \<T>\<lblot>Nat\<rblot>" unfolding eval_Pred using ext_Pred by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M :. Nat) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M :. Nat) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sPredL.IH cvs clsP satlP] .
+  qed
+next
+  case (sIfzL1 M \<Gamma> \<Delta> N P A)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((If M N P :. A) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((If M N P :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (If M N P) \<in> \<T>\<lblot>A\<rblot>" using satl by auto
+    then have "eval \<theta> M \<in> \<T>\<lblot>Nat\<rblot>" unfolding eval_If using ext_If1 by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M :. Nat) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M :. Nat) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sIfzL1.IH cvs clsP satlP] .
+  qed
+next
+  case (sIfzL2 N A \<Gamma> \<Delta> P M)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((If M N P :. A) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((If M N P :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (If M N P) \<in> \<T>\<lblot>A\<rblot>" using satl by auto
+    then have "eval \<theta> N \<in> \<T>\<lblot>A\<rblot> \<or> eval \<theta> P \<in> \<T>\<lblot>A\<rblot>" unfolding eval_If using ext_If2 by blast
+    then show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+    proof (elim disjE)
+      assume "eval \<theta> N \<in> \<T>\<lblot>A\<rblot>"
+      then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((N :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+      have clsP: "closes \<theta> (((N :. A) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+      show ?thesis using semantic_judgementD[OF sIfzL2.IH(1) cvs clsP satlP] .
+    next
+      assume "eval \<theta> P \<in> \<T>\<lblot>A\<rblot>"
+      then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((P :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+      have clsP: "closes \<theta> (((P :. A) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+      show ?thesis using semantic_judgementD[OF sIfzL2.IH(2) cvs clsP satlP] .
+    qed
+  qed
+next
+  case (sLetL1 N A \<Gamma> \<Delta> x M)
+  note freshGD = sLetL1.hyps(2)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((term.Let x M N :. A) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((term.Let x M N :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    define S where "S = FVars (term.Let x M N) \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>"
+    define \<theta>R where "\<theta>R = filter (\<lambda>p. fst p \<in> S) \<theta>"
+    have cvsR: "closed_val_subst \<theta>R" unfolding \<theta>R_def by (rule cvs_filter[OF cvs])
+    have domR: "fst ` set \<theta>R \<subseteq> S" unfolding \<theta>R_def by auto
+    have dS: "dset x \<inter> S = {}" using freshGD unfolding S_def by auto
+    have evG: "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evD: "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evL: "eval \<theta>R (term.Let x M N) = eval \<theta> (term.Let x M N)"
+      unfolding \<theta>R_def by (rule eval_filter[OF cvs]) (auto simp: S_def)
+    have pushL: "eval \<theta>R (term.Let x M N) = term.Let x (eval \<theta>R M) (eval \<theta>R N)"
+      by (rule eval_Let[OF cvsR]) (use domR dS in auto)
+    have clLet: "FVars (eval \<theta>R (term.Let x M N)) = {}" using cls evL by auto
+    have clM: "FVars (eval \<theta>R M) = {}" using clLet pushL by auto
+    have clN: "FVars (eval \<theta>R N) \<subseteq> dset x" using clLet pushL by auto
+    have head: "eval \<theta>R (term.Let x M N) \<in> \<T>\<lblot>A\<rblot>" using satl evL by auto
+    then have headP: "term.Let x (eval \<theta>R M) (eval \<theta>R N) \<in> \<T>\<lblot>A\<rblot>" using pushL by simp
+    obtain V W where VW: "eval \<theta>R M \<rightarrow>* term.Pair V W" "val V" "val W"
+      "FVars V = {}" "FVars W = {}"
+      "(eval \<theta>R N)[V <- dfst x][W <- dsnd x] \<in> \<T>\<lblot>A\<rblot>"
+      using ext_Let[OF headP clM] by blast
+    define \<theta>' where "\<theta>' = (dfst x, V) # (dsnd x, W) # \<theta>R"
+    have cvs': "closed_val_subst \<theta>'"
+      unfolding \<theta>'_def using cvsR VW(2,3,4,5) by (auto simp: cvs_Cons)
+    have dfstR: "dfst x \<notin> fst ` set \<theta>R" and dsndR: "dsnd x \<notin> fst ` set \<theta>R"
+      using domR dS dsel_dset[of x] by blast+
+    have evN: "eval \<theta>' N = (eval \<theta>R N)[V <- dfst x][W <- dsnd x]"
+      unfolding \<theta>'_def
+      by (rule eval_Cons2_subst[OF cvsR dfstR dsndR dfst_neq_dsnd VW(4,5)])
+    have evG': "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+    proof -
+      fix \<tau> assume m: "\<tau> |\<in>| \<Gamma>"
+      have "dfst x \<notin> FVars (fst \<tau>)" "dsnd x \<notin> FVars (fst \<tau>)"
+        using FVarsC_member'[OF m] freshGD dsel_dset[of x] by blast+
+      then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+        unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+      then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evG[OF m] by simp
+    qed
+    have evD': "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+    proof -
+      fix \<tau> assume m: "\<tau> |\<in>| \<Delta>"
+      have "dfst x \<notin> FVars (fst \<tau>)" "dsnd x \<notin> FVars (fst \<tau>)"
+        using FVarsC_member'[OF m] freshGD dsel_dset[of x] by blast+
+      then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+        unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+      then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evD[OF m] by simp
+    qed
+    have satl': "\<forall>\<tau>. \<tau> |\<in>| ((N :. A) ; \<Gamma>) \<longrightarrow> satL \<theta>' \<tau>"
+    proof (intro allI impI)
+      fix \<tau> assume "\<tau> |\<in>| ((N :. A) ; \<Gamma>)"
+      then consider "\<tau> = (N :. A)" | "\<tau> |\<in>| \<Gamma>" by auto
+      then show "satL \<theta>' \<tau>"
+      proof cases
+        case 1
+        show ?thesis unfolding 1 satL_pair evN by (rule VW(6))
+      next
+        case 2
+        then show ?thesis using satl satL_cong[OF evG'[OF 2]] by blast
+      qed
+    qed
+    have cls': "closes \<theta>' (((N :. A) ; \<Gamma>) |\<union>| \<Delta>)"
+    proof -
+      have "FVars (eval \<theta>' N) = {}"
+        unfolding evN using clN VW(4,5) dfst_neq_dsnd[of x] dset_alt[of x]
+        by (auto simp: FVars_usubst split: if_splits)
+      moreover have "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+        using evG' cls by (auto simp: closes_def)
+      moreover have "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+        using evD' cls by (auto simp: closes_def)
+      ultimately show ?thesis by (auto simp: closes_def)
+    qed
+    from semantic_judgementD[OF sLetL1.IH cvs' cls' satl']
+    obtain \<tau> where t: "\<tau> |\<in>| \<Delta>" "satR \<theta>' \<tau>" by blast
+    then have "satR \<theta> \<tau>" using satR_cong[OF evD'[OF t(1)]] by simp
+    then show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>" using t(1) by blast
+  qed
+next
+  case (sLetL2 M B1 B2 \<Gamma> \<Delta> N A x)
+  note freshGD = sLetL2.hyps(4)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((term.Let x M N :. A) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((term.Let x M N :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    define S where "S = FVars (term.Let x M N) \<union> FVarsC \<Gamma> \<union> FVarsC \<Delta>"
+    define \<theta>R where "\<theta>R = filter (\<lambda>p. fst p \<in> S) \<theta>"
+    have cvsR: "closed_val_subst \<theta>R" unfolding \<theta>R_def by (rule cvs_filter[OF cvs])
+    have domR: "fst ` set \<theta>R \<subseteq> S" unfolding \<theta>R_def by auto
+    have dS: "dset x \<inter> S = {}" using freshGD unfolding S_def by auto
+    have evG: "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evD: "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>R (fst \<tau>) = eval \<theta> (fst \<tau>)"
+      unfolding \<theta>R_def
+      by (rule eval_filter[OF cvs]) (use FVarsC_member' in \<open>fastforce simp: S_def\<close>)
+    have evL: "eval \<theta>R (term.Let x M N) = eval \<theta> (term.Let x M N)"
+      unfolding \<theta>R_def by (rule eval_filter[OF cvs]) (auto simp: S_def)
+    have evMag: "eval \<theta>R M = eval \<theta> M"
+      unfolding \<theta>R_def by (rule eval_filter[OF cvs]) (auto simp: S_def)
+    have pushL: "eval \<theta>R (term.Let x M N) = term.Let x (eval \<theta>R M) (eval \<theta>R N)"
+      by (rule eval_Let[OF cvsR]) (use domR dS in auto)
+    have clLet: "FVars (eval \<theta>R (term.Let x M N)) = {}" using cls evL by auto
+    have clM: "FVars (eval \<theta>R M) = {}" using clLet pushL by auto
+    have clN: "FVars (eval \<theta>R N) \<subseteq> dset x" using clLet pushL by auto
+    have head: "eval \<theta>R (term.Let x M N) \<in> \<T>\<lblot>A\<rblot>" using satl evL by auto
+    then have headP: "term.Let x (eval \<theta>R M) (eval \<theta>R N) \<in> \<T>\<lblot>A\<rblot>" using pushL by simp
+    obtain V W where VW: "eval \<theta>R M \<rightarrow>* term.Pair V W" "val V" "val W"
+      "FVars V = {}" "FVars W = {}"
+      "(eval \<theta>R N)[V <- dfst x][W <- dsnd x] \<in> \<T>\<lblot>A\<rblot>"
+      using ext_Let[OF headP clM] by blast
+    define \<theta>' where "\<theta>' = (dfst x, V) # (dsnd x, W) # \<theta>R"
+    have cvs': "closed_val_subst \<theta>'"
+      unfolding \<theta>'_def using cvsR VW(2,3,4,5) by (auto simp: cvs_Cons)
+    have evfst: "eval \<theta>' (Var (dfst x)) = V"
+      unfolding \<theta>'_def by (rule eval_Cons_Var_same[OF VW(4)])
+    have evsnd: "eval \<theta>' (Var (dsnd x)) = W"
+      unfolding \<theta>'_def using dfst_neq_dsnd[of x] VW(5)
+      by (simp add: eval_Cons eval_Cons_Var_same eval_closed)
+    have dfstR: "dfst x \<notin> fst ` set \<theta>R" and dsndR: "dsnd x \<notin> fst ` set \<theta>R"
+      using domR dS dsel_dset[of x] by blast+
+    have evN: "eval \<theta>' N = (eval \<theta>R N)[V <- dfst x][W <- dsnd x]"
+      unfolding \<theta>'_def
+      by (rule eval_Cons2_subst[OF cvsR dfstR dsndR dfst_neq_dsnd VW(4,5)])
+    have evG': "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+    proof -
+      fix \<tau> assume m: "\<tau> |\<in>| \<Gamma>"
+      have "dfst x \<notin> FVars (fst \<tau>)" "dsnd x \<notin> FVars (fst \<tau>)"
+        using FVarsC_member'[OF m] freshGD dsel_dset[of x] by blast+
+      then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+        unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+      then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evG[OF m] by simp
+    qed
+    have evD': "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)"
+    proof -
+      fix \<tau> assume m: "\<tau> |\<in>| \<Delta>"
+      have "dfst x \<notin> FVars (fst \<tau>)" "dsnd x \<notin> FVars (fst \<tau>)"
+        using FVarsC_member'[OF m] freshGD dsel_dset[of x] by blast+
+      then have "eval \<theta>' (fst \<tau>) = eval \<theta>R (fst \<tau>)"
+        unfolding \<theta>'_def by (simp add: eval_Cons_idle)
+      then show "eval \<theta>' (fst \<tau>) = eval \<theta> (fst \<tau>)" using evD[OF m] by simp
+    qed
+    have satlN: "\<forall>\<tau>. \<tau> |\<in>| ((N :. A) ; \<Gamma>) \<longrightarrow> satL \<theta>' \<tau>"
+    proof (intro allI impI)
+      fix \<tau> assume "\<tau> |\<in>| ((N :. A) ; \<Gamma>)"
+      then consider "\<tau> = (N :. A)" | "\<tau> |\<in>| \<Gamma>" by auto
+      then show "satL \<theta>' \<tau>"
+      proof cases
+        case 1
+        show ?thesis unfolding 1 satL_pair evN by (rule VW(6))
+      next
+        case 2
+        then show ?thesis using satl satL_cong[OF evG'[OF 2]] by blast
+      qed
+    qed
+    have clsN2: "\<And>Bi v. v \<in> dset x \<Longrightarrow> FVars (eval \<theta>' (Var v)) = {} \<Longrightarrow>
+      closes \<theta>' (((N :. A) ; \<Gamma>) |\<union>| ((Var v :. Bi) ; \<Delta>))"
+    proof -
+      fix Bi :: type and v assume "v \<in> dset x" and clv: "FVars (eval \<theta>' (Var v)) = {}"
+      have "FVars (eval \<theta>' N) = {}"
+        unfolding evN using clN VW(4,5) dfst_neq_dsnd[of x] dset_alt[of x]
+        by (auto simp: FVars_usubst split: if_splits)
+      moreover have "\<And>\<tau>. \<tau> |\<in>| \<Gamma> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+        using evG' cls by (auto simp: closes_def)
+      moreover have "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> FVars (eval \<theta>' (fst \<tau>)) = {}"
+        using evD' cls by (auto simp: closes_def)
+      ultimately show "closes \<theta>' (((N :. A) ; \<Gamma>) |\<union>| ((Var v :. Bi) ; \<Delta>))"
+        using clv by (auto simp: closes_def)
+    qed
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+    proof (cases "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>")
+      case True
+      then show ?thesis .
+    next
+      case False
+      have noD': "\<And>\<tau>. \<tau> |\<in>| \<Delta> \<Longrightarrow> \<not> satR \<theta>' \<tau>"
+        using False satR_cong evD' by blast
+      have cls1: "closes \<theta>' (((N :. A) ; \<Gamma>) |\<union>| ((Var (dfst x) :. B1) ; \<Delta>))"
+        by (rule clsN2) (use dsel_dset evfst VW(4) in auto)
+      from semantic_judgementD[OF sLetL2.IH(2) cvs' cls1 satlN]
+      obtain \<tau>1 where t1: "\<tau>1 |\<in>| ((Var (dfst x) :. B1) ; \<Delta>)" "satR \<theta>' \<tau>1" by blast
+      have V1: "V \<in> \<lblot>B1\<rblot>"
+      proof -
+        have "\<tau>1 = (Var (dfst x) :. B1)" using t1(1) noD' t1(2) by blast
+        then have "V \<in> \<T>\<^sub>\<bottom>\<lblot>B1\<rblot>" using t1(2) evfst by simp
+        then show ?thesis using val_taubot_iff[OF VW(2)] by simp
+      qed
+      have cls2: "closes \<theta>' (((N :. A) ; \<Gamma>) |\<union>| ((Var (dsnd x) :. B2) ; \<Delta>))"
+        by (rule clsN2) (use dsel_dset evsnd VW(5) in auto)
+      from semantic_judgementD[OF sLetL2.IH(3) cvs' cls2 satlN]
+      obtain \<tau>2 where t2: "\<tau>2 |\<in>| ((Var (dsnd x) :. B2) ; \<Delta>)" "satR \<theta>' \<tau>2" by blast
+      have V2: "W \<in> \<lblot>B2\<rblot>"
+      proof -
+        have "\<tau>2 = (Var (dsnd x) :. B2)" using t2(1) noD' t2(2) by blast
+        then have "W \<in> \<T>\<^sub>\<bottom>\<lblot>B2\<rblot>" using t2(2) evsnd by simp
+        then show ?thesis using val_taubot_iff[OF VW(3)] by simp
+      qed
+      have "term.Pair V W \<in> \<lblot>Prod B1 B2\<rblot>" using V1 V2 by auto
+      then have "eval \<theta>R M \<in> \<T>\<lblot>Prod B1 B2\<rblot>"
+        using VW(1) val.intros(3)[OF VW(2,3)] by (blast intro: tau_intro)
+      then have satlM: "\<forall>\<tau>. \<tau> |\<in>| ((M :. Prod B1 B2) ; \<Gamma>) \<longrightarrow> satL \<theta>R \<tau>"
+        using satl satL_cong evG by auto
+      have clsM: "closes \<theta>R (((M :. Prod B1 B2) ; \<Gamma>) |\<union>| \<Delta>)"
+        using cls evG evD evMag clM by (auto simp: closes_def)
+      from semantic_judgementD[OF sLetL2.IH(1) cvsR clsM satlM]
+      obtain \<tau> where t: "\<tau> |\<in>| \<Delta>" "satR \<theta>R \<tau>" by blast
+      then have "satR \<theta> \<tau>" using satR_cong[OF evD[OF t(1)]] by simp
+      then show ?thesis using t(1) by blast
+    qed
+  qed
+next
+  case (sOkVarR \<Gamma> x \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((Var x :. Ok) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    have clx: "FVars (eval \<theta> (Var x)) = {}" using cls by auto
+    have vx: "val (eval \<theta> (Var x))"
+      using eval_Var[OF cvs, of x] clx by auto
+    have "eval \<theta> (Var x) \<in> \<T>\<^sub>\<bottom>\<lblot>Ok\<rblot>"
+      by (rule val_in_taubot[OF vx]) (simp add: Vals0_def vx)
+    then have "satR \<theta> (Var x :. Ok)" by simp
+    then show "\<exists>\<tau>. \<tau> |\<in>| ((Var x :. Ok) ; \<Delta>) \<and> satR \<theta> \<tau>" by (rule exR_head)
+  qed
+next
+  case (sOkL M \<Gamma> \<Delta> A)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((M :. A) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((M :. A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> M \<in> \<T>\<lblot>A\<rblot>" using satl by auto
+    then have "eval \<theta> M \<in> \<T>\<lblot>Ok\<rblot>" by (rule tau_Ok)
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M :. Ok) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sOkL.IH cvs clsP satlP] .
+  qed
+next
+  case (sOkR \<Gamma> M A \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (\<Gamma> |\<union>| ((M :. Ok) ; \<Delta>))"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| \<Gamma> \<longrightarrow> satL \<theta> \<tau>"
+    have clsP: "closes \<theta> (\<Gamma> |\<union>| ((M :. A) ; \<Delta>))" using cls by auto
+    from satR_casesD[OF semantic_judgementD[OF sOkR.IH cvs clsP satl]]
+    show "\<exists>\<tau>. \<tau> |\<in>| ((M :. Ok) ; \<Delta>) \<and> satR \<theta> \<tau>"
+    proof (elim disjE)
+      assume "eval \<theta> M \<in> \<T>\<^sub>\<bottom>\<lblot>A\<rblot>"
+      then have "satR \<theta> (M :. Ok)" using taubot_Ok by simp
+      then show ?thesis by (rule exR_head)
+    qed (blast intro: exR_tail)
+  qed
+next
+  case (sOkApL1 M A \<Gamma> \<Delta> N)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((App M N :. Ok) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((App M N :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (App M N) \<in> \<T>\<lblot>Ok\<rblot>" using satl by auto
+    then have "eval \<theta> M \<in> \<T>\<lblot>OnlyTo Ok A\<rblot>" unfolding eval_App using ext_App_fix by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M :. OnlyTo Ok A) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M :. OnlyTo Ok A) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sOkApL1.IH cvs clsP satlP] .
+  qed
+next
+  case (sOkApL2 N \<Gamma> \<Delta> M)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((App M N :. Ok) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((App M N :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (App M N) \<in> \<T>\<lblot>Ok\<rblot>" using satl by auto
+    then have "eval \<theta> N \<in> \<T>\<lblot>Ok\<rblot>" unfolding eval_App using ext_App2_Ok by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((N :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((N :. Ok) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sOkApL2.IH cvs clsP satlP] .
+  qed
+next
+  case (sOkSL M \<Gamma> \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((Succ M :. Ok) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((Succ M :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (Succ M) \<in> \<T>\<lblot>Ok\<rblot>" using satl by auto
+    then have "eval \<theta> M \<in> \<T>\<lblot>Nat\<rblot>" unfolding eval_Succ using ext_Succ by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M :. Nat) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M :. Nat) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sOkSL.IH cvs clsP satlP] .
+  qed
+next
+  case (sOkPL M \<Gamma> \<Delta>)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((Pred M :. Ok) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((Pred M :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (Pred M) \<in> \<T>\<lblot>Ok\<rblot>" using satl by auto
+    then have "eval \<theta> M \<in> \<T>\<lblot>Nat\<rblot>" unfolding eval_Pred using ext_Pred by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M :. Nat) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M :. Nat) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sOkPL.IH cvs clsP satlP] .
+  qed
+next
+  case (sOkPrL_1 M1 \<Gamma> \<Delta> M2)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((Pair M1 M2 :. Ok) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((Pair M1 M2 :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (term.Pair M1 M2) \<in> \<T>\<lblot>Ok\<rblot>" using satl by auto
+    then have "eval \<theta> M1 \<in> \<T>\<lblot>Ok\<rblot>" unfolding eval_Pair using ext_Pair_Ok by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M1 :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M1 :. Ok) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sOkPrL_1.IH cvs clsP satlP] .
+  qed
+next
+  case (sOkPrL_2 M2 \<Gamma> \<Delta> M1)
+  show ?case
+  proof (rule semantic_judgementI)
+    fix \<theta> :: "'a valuation"
+    assume cvs: "closed_val_subst \<theta>"
+      and cls: "closes \<theta> (((Pair M1 M2 :. Ok) ; \<Gamma>) |\<union>| \<Delta>)"
+      and satl: "\<forall>\<tau>. \<tau> |\<in>| ((Pair M1 M2 :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>"
+    have "eval \<theta> (term.Pair M1 M2) \<in> \<T>\<lblot>Ok\<rblot>" using satl by auto
+    then have "eval \<theta> M2 \<in> \<T>\<lblot>Ok\<rblot>" unfolding eval_Pair using ext_Pair_Ok by blast
+    then have satlP: "\<forall>\<tau>. \<tau> |\<in>| ((M2 :. Ok) ; \<Gamma>) \<longrightarrow> satL \<theta> \<tau>" using satl by auto
+    have clsP: "closes \<theta> (((M2 :. Ok) ; \<Gamma>) |\<union>| \<Delta>)" using cls by auto
+    show "\<exists>\<tau>. \<tau> |\<in>| \<Delta> \<and> satR \<theta> \<tau>"
+      using semantic_judgementD[OF sOkPrL_2.IH cvs clsP satlP] .
+  qed
+qed
+
+
+section \<open>Corollary 4.9\<close>
+
+text \<open>For closed terms, in the safety fragment: well-typed programs do not go wrong, and
+  ill-typed programs do not evaluate.\<close>
+
+corollary well_typed_not_stuck: \<comment> \<open>Corollary 4.9, first part\<close>
+  fixes M :: "'a::var term"
+  assumes cl: "FVars M = {}" and ty: "{||} \<turnstile>\<^sub>s (M :. Ok) ; {||}"
+  shows "\<not> getStuck M"
+proof
+  assume gs: "getStuck M"
+  obtain S where S: "M \<rightarrow>* S" "stuck S" using gs getStuck_def by blast
+  have sem: "{||} \<Turnstile> ((M :. Ok) ; {||})" by (rule semantic_soundness[OF ty])
+  have cls0: "closes [] ({||} |\<union>| ((M :. Ok) ; {||}))"
+    using cl by (auto simp: closes_def)
+  have satl0: "\<forall>\<tau>. \<tau> |\<in>| ({||} :: 'a typing fset) \<longrightarrow> satL [] \<tau>" by auto
+  obtain \<tau> where t: "\<tau> |\<in>| ((M :. Ok) ; {||})" "satR [] \<tau>"
+    using semantic_judgementD[OF sem cvs_Nil cls0 satl0] by blast
+  then have MOk: "M \<in> \<T>\<^sub>\<bottom>\<lblot>Ok\<rblot>" by auto
+  then consider (v) V where "M \<rightarrow>* V" "val V" | (d) "M \<Up>" by auto
+  then show False
+  proof cases
+    case (v V)
+    have "V = S"
+      using beta_star_normal_unique v S(1) vals_are_normal[OF v(2)] stucks_are_normal[OF S(2)]
+      unfolding beta_star_def by blast
+    then show False using v(2) S(2) stuck_not_val by blast
+  next
+    case d
+    then show False
+      using S(1) stucks_are_normal[OF S(2)] diverge_xor_normalizes normalizes_def by blast
+  qed
+qed
+
+corollary ill_typed_not_evaluate: \<comment> \<open>Corollary 4.9, second part\<close>
+  fixes M :: "'a::var term"
+  assumes cl: "FVars M = {}" and ty: "(M :. Ok) ; {||} \<turnstile>\<^sub>s {||}"
+  shows "\<not> (\<exists>V. M \<rightarrow>* V \<and> val V)"
+proof
+  assume "\<exists>V. M \<rightarrow>* V \<and> val V"
+  then have "satL [] (M :. Ok)" by (auto simp: Vals0_def)
+  then have satl0: "\<forall>\<tau>. \<tau> |\<in>| ((M :. Ok) ; {||}) \<longrightarrow> satL [] \<tau>" by auto
+  have cls0: "closes [] (((M :. Ok) ; {||}) |\<union>| {||})"
+    using cl by (auto simp: closes_def)
+  show False
+    using semantic_judgementD[OF semantic_soundness[OF ty] cvs_Nil cls0 satl0] by auto
+qed
+
+
+section \<open>Theorem 4.5: the necessity arrow is not a safety property\<close>
+
+text \<open>The type \<open>Nat \<tratail> Nat \<rightarrow> Nat\<close> violates (S1): the context \<open>C = \<lambda>x y. [\<cdot>] x\<close> filled with
+  \<open>N = \<lambda>w. pred w\<close> inhabits \<open>\<T>\<^sub>\<bottom>\<lblot>OnlyTo Nat (To Nat Nat)\<rblot>\<close> (if the argument is not a numeral,
+  the returned function gets stuck on any input), but filled with \<open>div \<lesssim> N\<close> it does not
+  (\<open>\<lambda>y. div V\<close> diverges on any input, hence is in \<open>Nat \<rightarrow> Nat\<close>, even for non-numeral \<open>V\<close>).
+  This is the first half of the paper's Theorem 4.5; since a single failing conjunct suffices,
+  it already establishes that not every type defines a safety property.\<close>
+
+theorem necessity_not_safety: \<comment> \<open>Theorem 4.5\<close>
+  "\<not> safety_property (tt :: 'a::var itself) (OnlyTo Nat (To Nat Nat))"
+proof -
+  obtain z :: 'a where "z \<notin> {}" using fresh_finite[of "{}"] by auto
+  obtain a :: 'a where a: "a \<notin> {z}" using fresh_finite[of "{z}"] by auto
+  obtain b :: 'a where b: "b \<notin> {z, a}" using fresh_finite[of "{z, a}"] by auto
+  define N :: "'a term" where "N = Lam z (Pred (Var z))"
+  define C :: "'a term" where "C = Lam a (Lam b (App (Var z) (Var a)))"
+  have az: "a \<noteq> z" and bz: "b \<noteq> z" and ba: "b \<noteq> a" using a b by auto
+  have clN: "FVars N = {}" unfolding N_def by auto
+  have vN: "val N" unfolding N_def by simp
+  have NW: "App N W \<rightarrow> Pred W" if "val W" for W :: "'a term"
+    using Lam_beta[OF that, of z "Pred (Var z)"] unfolding N_def by simp
+  \<comment> \<open>the two fillings of the context\<close>
+  have CN: "C[N <- z] = Lam a (Lam b (App N (Var a)))"
+    unfolding C_def using az bz clN by (simp add: Lam_usubst)
+  have CP: "C[divt <- z] = Lam a (Lam b (App divt (Var a)))"
+    unfolding C_def using az bz by (simp add: Lam_usubst)
+  have clCN: "FVars (C[N <- z]) = {}" unfolding CN using clN by auto
+  have PleN: "divt \<lesssim> N"
+    unfolding less_defined_def using divt_not_normalizes by blast
+  \<comment> \<open>filled with @{term N}, the context inhabits the type\<close>
+  have CNmem: "C[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo Nat (To Nat Nat)\<rblot>"
+  proof -
+    obtain g where g: "g \<notin> {a, b} \<union> FVars (N :: 'a term)"
+      using fresh_finite[of "{a, b} \<union> FVars N"] by auto
+    have Le: "Lam a (Lam b (App N (Var a))) = Fix g a (Lam b (App N (Var a)))"
+      by (rule Lam_eq) (use g clN in auto)
+    have bodyprop: "\<forall>W\<in>Vals0. FVars W = {} \<longrightarrow>
+      (Lam b (App N (Var a)))[W <- a][Fix g a (Lam b (App N (Var a))) <- g] \<in> \<T>\<lblot>To Nat Nat\<rblot> \<longrightarrow>
+      W \<in> \<lblot>Nat\<rblot>"
+    proof (intro ballI impI)
+      fix W :: "'a term"
+      assume "W \<in> Vals0" and clW: "FVars W = {}"
+        and mem: "(Lam b (App N (Var a)))[W <- a][Fix g a (Lam b (App N (Var a))) <- g]
+          \<in> \<T>\<lblot>To Nat Nat\<rblot>"
+      have vW: "val W" using \<open>W \<in> Vals0\<close> by (simp add: Vals0_def)
+      have push1: "(Lam b (App N (Var a)))[W <- a] = Lam b (App N W)"
+        using ba clW clN az bz by (simp add: Lam_usubst subst_idle)
+      have push2: "(Lam b (App N W))[Fix g a (Lam b (App N (Var a))) <- g] = Lam b (App N W)"
+        by (rule subst_idle) (use g clN clW in auto)
+      have memTo: "Lam b (App N W) \<in> \<T>\<lblot>To Nat Nat\<rblot>" using mem unfolding push1 push2 .
+      have memTo': "Lam b (App N W) \<in> \<lblot>To Nat Nat\<rblot>"
+        using val_tau_iff[OF val_Lam] memTo by blast
+      obtain h where h: "h \<notin> {b} \<union> FVars (App N W)"
+        using fresh_finite[of "{b} \<union> FVars (App N W)"] by auto
+      have Lh: "Lam b (App N W) = Fix h b (App N W)"
+        by (rule Lam_eq) (use h in auto)
+      have iZ: "(Zero :: 'a term) \<in> \<lblot>Nat\<rblot>" by (simp add: num.intros(1))
+      have unf: "(App N W)[Zero <- b][Lam b (App N W) <- h] \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+        by (rule To_unfold[OF memTo' _ _ iZ Lh]) (auto intro: val.intros num.intros)
+      have clNW: "b \<notin> FVars (App N W)" and hNW: "h \<notin> FVars (App N W)"
+        using clN clW h by auto
+      have ANW: "App N W \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+        using unf unfolding subst_idle[OF clNW] subst_idle[OF hNW] .
+      show "W \<in> \<lblot>Nat\<rblot>"
+      proof (rule ccontr)
+        assume "W \<notin> \<lblot>Nat\<rblot>"
+        then have nW: "\<not> num W" by simp
+        have "stuckEx (Pred W)" by (rule stuckEx.intros(5)[OF vW nW])
+        then have sPW: "stuck (Pred W)" by (rule stuckEx_imp_stuck)
+        have steps: "App N W \<rightarrow>[Suc 0] Pred W"
+          using betas.step[OF NW[OF vW] betas.refl] .
+        have "App N W \<notin> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+          by (rule notin_taubot_of_normal_reach[OF steps stucks_are_normal[OF sPW]])
+            (use sPW stuck_not_val in blast)
+        then show False using ANW by blast
+      qed
+    qed
+    have "Lam a (Lam b (App N (Var a))) \<in> \<lblot>OnlyTo Nat (To Nat Nat)\<rblot>"
+      unfolding Le type_semantics.simps(5) using bodyprop by blast
+    then show ?thesis
+      unfolding CN using val_taubot_iff[OF val_Lam] by blast
+  qed
+  \<comment> \<open>filled with @{term divt}, it does not\<close>
+  have CPnot: "C[divt <- z] \<notin> \<T>\<^sub>\<bottom>\<lblot>OnlyTo Nat (To Nat Nat)\<rblot>"
+  proof
+    assume "C[divt <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo Nat (To Nat Nat)\<rblot>"
+    then have memO: "Lam a (Lam b (App divt (Var a))) \<in> \<lblot>OnlyTo Nat (To Nat Nat)\<rblot>"
+      unfolding CP using val_taubot_iff[OF val_Lam] by blast
+    define VV :: "'a term" where "VV = Lam z (Var z)"
+    have vVV: "val VV" unfolding VV_def by simp
+    have clVV: "FVars VV = {}" unfolding VV_def by auto
+    obtain g where g: "g \<notin> {a, b}" using fresh_finite[of "{a, b}"] by auto
+    have Le: "Lam a (Lam b (App divt (Var a))) = Fix g a (Lam b (App divt (Var a)))"
+      by (rule Lam_eq) (use g in auto)
+    have push1: "(Lam b (App divt (Var a)))[VV <- a] = Lam b (App divt VV)"
+      using ba clVV az bz by (simp add: Lam_usubst subst_idle)
+    have push2: "(Lam b (App divt VV))[Lam a (Lam b (App divt (Var a))) <- g]
+        = Lam b (App divt VV)"
+      by (rule subst_idle) (use g clVV in auto)
+    have memTo: "Lam b (App divt VV) \<in> \<lblot>To Nat Nat\<rblot>"
+    proof -
+      obtain h where h: "h \<notin> {b} \<union> FVars (App divt VV)"
+        using fresh_finite[of "{b} \<union> FVars (App divt VV)"] by auto
+      have Lh: "Lam b (App divt VV) = Fix h b (App divt VV)"
+        by (rule Lam_eq) (use h in auto)
+      have dv: "App divt VV \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+        using div_App1[OF divt_diverge] by auto
+      have bodyprop: "\<forall>U\<in>Vals0. FVars U = {} \<longrightarrow> U \<in> \<lblot>Nat\<rblot> \<longrightarrow>
+        (App divt VV)[U <- b][Fix h b (App divt VV) <- h] \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+      proof (intro ballI impI)
+        fix U :: "'a term"
+        assume "FVars U = {}"
+        have c1: "b \<notin> FVars (App divt VV)" and c2: "h \<notin> FVars (App divt VV)"
+          using clVV h by auto
+        show "(App divt VV)[U <- b][Fix h b (App divt VV) <- h] \<in> \<T>\<^sub>\<bottom>\<lblot>Nat\<rblot>"
+          unfolding subst_idle[OF c1] subst_idle[OF c2] by (rule dv)
+      qed
+      show ?thesis unfolding Lh type_semantics.simps(4) using bodyprop by blast
+    qed
+    have memTo': "(Lam b (App divt (Var a)))[VV <- a]
+        [Lam a (Lam b (App divt (Var a))) <- g] \<in> \<T>\<lblot>To Nat Nat\<rblot>"
+      unfolding push1 push2 using val_tau_iff[OF val_Lam] memTo by blast
+    have "VV \<in> \<lblot>Nat\<rblot>"
+      by (rule OnlyTo_unfold[OF memO vVV clVV Le memTo'])
+    then have "num VV" by simp
+    then show False unfolding VV_def using not_num_Lam by blast
+  qed
+  have "\<not> (\<forall>(C::'a term) N P z. FVars (C[N <- z]) = {} \<longrightarrow> P \<lesssim> N \<longrightarrow>
+      C[N <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo Nat (To Nat Nat)\<rblot> \<longrightarrow>
+      C[P <- z] \<in> \<T>\<^sub>\<bottom>\<lblot>OnlyTo Nat (To Nat Nat)\<rblot>)"
+    using clCN PleN CNmem CPnot by blast
+  then show ?thesis unfolding safety_property_def by blast
+qed
 
 end
