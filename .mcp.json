@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pide_mcp": {
+      "command": "/Users/kfx532/isabelle/bin/isabelle",
+      "args": ["pide_mcp", "-d", "/Users/kfx532/repos/bnfs/binder_datatypes", "-l", "Binders"]
+    }
+  }
+}
