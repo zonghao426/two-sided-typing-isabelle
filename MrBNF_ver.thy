@@ -173,24 +173,11 @@ lemma vals_are_normal: "val V \<Longrightarrow> normal V"
   apply(auto elim:beta.cases simp add:normal_def)
   done
 
-lemma num_permute:
+lemma num_permute[equiv]:
   "num n \<Longrightarrow> bij (\<sigma>::'a::var\<Rightarrow>'a) \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> num (permute_term \<sigma> n)"
   by (induct rule: num.induct) (auto intro: num.intros)
 
-binder_inductive (no_auto_equiv) val
-  subgoal premises prems for R B \<sigma> x \<comment> \<open>equivariance\<close>
-    using prems(3)
-    apply (elim disjE exE)
-    subgoal by (auto simp: prems(1,2))
-    subgoal by (auto simp: prems(1,2) num_permute)
-    subgoal by (auto simp: prems(1,2) term.permute_comp supp_inv_bound term.permute_id)
-    subgoal for f xa M
-      apply (intro disjI2)
-      apply (elim conjE)
-      apply (rule exI[of _ "\<sigma> f"], rule exI[of _ "\<sigma> xa"], rule exI[of _ "permute_term \<sigma> M"])
-      apply (simp add: prems(1,2))
-      done
-    done
+binder_inductive val
   done
 
 thm val.strong_induct
@@ -250,12 +237,12 @@ lemma val_permute_iff:
   "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> val (permute_term \<sigma> (V::'a::var term)) = val V"
   by (metis val.equiv permute_term_inv supp_inv_bound bij_imp_bij_inv)
 
-lemma is_Fix_permute:
+lemma is_Fix_permute[equiv]:
   "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> is_Fix (permute_term \<sigma> (V::'a::var term)) = is_Fix V"
   unfolding is_Fix_def
   by (metis permute_term_inv term.permute(7) bij_imp_bij_inv supp_inv_bound)
 
-lemma is_Pair_permute:
+lemma is_Pair_permute[equiv]:
   "bij \<sigma> \<Longrightarrow> |supp \<sigma>| <o |UNIV::'a set| \<Longrightarrow> is_Pair (permute_term \<sigma> (V::'a::var term)) = is_Pair V"
   unfolding is_Pair_def
   by (metis permute_term_inv term.permute(8) bij_imp_bij_inv supp_inv_bound)
@@ -335,8 +322,7 @@ next
   then show ?thesis by (intro exI[of _ "{}"]) auto
 qed
 
-binder_inductive (no_auto_equiv) stuckEx
-  subgoal premises prems for R B \<sigma> x by (rule stuckEx_equiv_ob[OF prems(1,2,3)])
+binder_inductive stuckEx
   done
 
 section \<open>Basic Lemmas\<close>
@@ -600,8 +586,9 @@ next
     using px1 px2 hV gfr by auto
 qed
 
-binder_inductive (no_auto_equiv) beta
+binder_inductive (no_auto_equiv, no_auto_refresh) beta
   subgoal premises prems for R B \<sigma> x1 x2 by (rule beta_equiv_ob[OF prems(1) prems(2) prems(3)])
+  subgoal premises prems for R B x1 x2 by (rule beta_refresh_ob[OF prems(3)])
   done
 
 lemma beta_deterministic:
@@ -989,7 +976,8 @@ next
   then show ?thesis by (intro exI[of _ "{}"]) auto
 qed
 
-binder_inductive eval_ctx
+binder_inductive (no_auto_refresh) eval_ctx
+  subgoal premises prems for R B x1 x2 by (rule eval_ctx_refresh_ob[OF prems(3)])
   done
 
 lemma eval_ctx_strong_induct[consumes 1]: "eval_ctx (x1 :: 'a) x2 \<Longrightarrow>
@@ -1604,7 +1592,7 @@ text \<open>Refreshability holds trivially with @{term "B' = B"}: the freshness 
   context, i.e.\ that @{term B} is already disjoint from the support the obligation computes. For the
   non-binding rules @{term "B = {}"}. Equivariance is discharged automatically via the @{text equiv}
   simp set.\<close>
-binder_inductive (no_auto_equiv) judgement
+binder_inductive (no_auto_equiv, no_auto_refresh) judgement
   subgoal premises prems for R B \<sigma> x1 x2 \<comment> \<open>equivariance\<close>
     supply SET = prems(1,2) term.permute[OF prems(1,2)]
         term.permute[OF bij_imp_bij_inv[OF prems(1)] supp_inv_bound[OF prems(1,2)]]
@@ -1776,6 +1764,14 @@ binder_inductive (no_auto_equiv) judgement
         by (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2,
             rule exI[of _ "permute_term \<sigma> M2"], rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Gamma>"],
             rule exI[of _ "map_prod (permute_term \<sigma>) id |`| \<Delta>"], rule exI[of _ "permute_term \<sigma> M1"]) (auto simp: SET) done
+    done
+  subgoal premises prems for R B x1 x2 \<comment> \<open>refreshability\<close>
+    apply (rule exI[of _ B])
+    apply (rule conjI)
+    subgoal
+      using prems(3) by (elim disjE exE conjE) (auto simp: FVarsC_def)
+    subgoal
+      by (rule prems(3))
     done
   done
 
@@ -6449,7 +6445,119 @@ text \<open>Equivariance is discharged automatically thanks to the \<open>equiv\
   binders freshly on both sides simultaneously (using the equivariance of the induction relation
   \<open>R\<close>, which the obligation provides), and the approximant rule additionally transports the
   approximant along the renaming via @{thm fixapp_cong}.\<close>
-binder_inductive apx
+binder_inductive (no_auto_refresh) apx
+  subgoal premises prems for R B n P Q
+  proof -
+    from prems(3) show ?thesis
+    proof (elim disjE exE conjE, goal_cases)
+      case (1 n') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (2 n' v) then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (3 n' M M') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (4 n' M M') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (5 n' M M' N N' P' P'') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (6 n' M M' N N') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (7 n' M M' N N') then show ?case by (intro exI[of _ "{}"]) auto
+    next
+      case (8 n' M M' f x)
+      have b1: "|{f, x}| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+      have b2: "|{f, x} \<union> FVars M \<union> FVars M'| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+      obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+          "g ` {f, x} \<inter> ({f, x} \<union> FVars M \<union> FVars M') = {}"
+          "id_on ((FVars M \<union> FVars M') - {x, f}) g" "g \<circ> g = id"
+        using eextend_fresh[OF b1 b2 infinite_UNIV, of "(FVars M \<union> FVars M') - {x, f}"]
+        by (auto simp: insert_commute)
+      have idM: "id_on (FVars M - {x, f}) g" and idM': "id_on (FVars M' - {x, f}) g"
+        using g(4) by (auto simp: id_on_def)
+      have eqM: "Fix f x M = Fix (g f) (g x) (permute_term g M)"
+        using g(1,2) idM by (auto intro!: exI[of _ g])
+      have eqM': "Fix f x M' = Fix (g f) (g x) (permute_term g M')"
+        using g(1,2) idM' by (auto intro!: exI[of _ g])
+      have Rg: "R n' (permute_term g M) (permute_term g M')"
+        using prems(2)[OF g(1,2) 8(5)] by simp
+      show ?case
+        apply (rule exI[of _ "{g f, g x}"])
+        apply (rule conjI)
+        subgoal using g(3) unfolding 8(3,4) by auto
+        subgoal
+          apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2,
+              rule disjI2, rule disjI1)
+          apply (rule exI[of _ n'], rule exI[of _ "permute_term g M"],
+              rule exI[of _ "permute_term g M'"], rule exI[of _ "g f"], rule exI[of _ "g x"])
+          using 8(2,3,4) eqM eqM' Rg by auto
+        done
+    next
+      case (9 n' M M' N N' xy)
+      have b1: "|dset xy| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF finite_dset infinite_UNIV])
+      have b2: "|dset xy \<union> FVars N \<union> FVars N' \<union> FVars M \<union> FVars M'| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) (simp add: finite_dset)
+      obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+          "g ` dset xy \<inter> (dset xy \<union> FVars N \<union> FVars N' \<union> FVars M \<union> FVars M') = {}"
+          "id_on ((FVars N \<union> FVars N') - dset xy) g" "g \<circ> g = id"
+        using eextend_fresh[OF b1 b2 infinite_UNIV, of "(FVars N \<union> FVars N') - dset xy"]
+        by (auto simp: insert_commute)
+      have idN: "id_on (FVars N - dset xy) g" and idN': "id_on (FVars N' - dset xy) g"
+        using g(4) by (auto simp: id_on_def)
+      have eqN: "term.Let xy M N = term.Let (dmap g xy) M (permute_term g N)"
+        using g(1,2) idN by (auto intro!: exI[of _ g])
+      have eqN': "term.Let xy M' N' = term.Let (dmap g xy) M' (permute_term g N')"
+        using g(1,2) idN' by (auto intro!: exI[of _ g])
+      have Rg: "R n' (permute_term g N) (permute_term g N')"
+        using prems(2)[OF g(1,2) 9(6)] by simp
+      show ?case
+        apply (rule exI[of _ "dset (dmap g xy)"])
+        apply (rule conjI)
+        subgoal using g(3) unfolding 9(3,4) by (auto simp: dpair.set_map[OF g(1,2)])
+        subgoal
+          apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2,
+              rule disjI2, rule disjI2, rule disjI1)
+          apply (rule exI[of _ n'], rule exI[of _ M], rule exI[of _ M'],
+              rule exI[of _ "permute_term g N"], rule exI[of _ "permute_term g N'"],
+              rule exI[of _ "dmap g xy"])
+          using 9(2,3,4,5) eqN eqN' Rg by auto
+        done
+    next
+      case (10 M f x n' k)
+      have b1: "|{f, x}| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+      have b2: "|{f, x} \<union> FVars M| <o |UNIV::'a set|"
+        by (rule finite_ordLess_infinite2[OF _ infinite_UNIV]) simp
+      obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+          "g ` {f, x} \<inter> ({f, x} \<union> FVars M) = {}"
+          "id_on (FVars M - {x, f}) g" "g \<circ> g = id"
+        using eextend_fresh[OF b1 b2 infinite_UNIV, of "FVars M - {x, f}"]
+        by (auto simp: insert_commute)
+      have eqM: "Fix f x M = Fix (g f) (g x) (permute_term g M)"
+        using g(1,2,4) by (auto intro!: exI[of _ g])
+      have eqF: "fixapp k f x M = fixapp k (g f) (g x) (permute_term g M)"
+        by (rule fixapp_cong[OF eqM])
+      have sub: "FVars (permute_term g M) \<subseteq> {g f, g x}"
+        using 10(5) by (auto simp: term.FVars_permute[OF g(1,2)])
+      have neq: "g f \<noteq> g x"
+        using 10(6) g(1) by (simp add: bij_implies_inject)
+      have fvP: "FVars P = {}" and fvQ: "FVars Q = {}"
+        using 10(3,4,5) FVars_fixapp[of k f x M] by auto
+      show ?case
+        apply (rule exI[of _ "{g f, g x}"])
+        apply (rule conjI)
+        subgoal unfolding fvP fvQ by auto
+        subgoal
+          apply (rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2, rule disjI2,
+              rule disjI2, rule disjI2, rule disjI2)
+          apply (rule exI[of _ "permute_term g M"], rule exI[of _ "g f"], rule exI[of _ "g x"],
+              rule exI[of _ n'], rule exI[of _ k])
+          using 10(2,3,4,7) eqM eqF sub neq by auto
+        done
+    qed
+  qed
   done
 
 thm apx.strong_induct apx.equiv apx.cases
