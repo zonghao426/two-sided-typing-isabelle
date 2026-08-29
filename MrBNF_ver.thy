@@ -586,9 +586,40 @@ next
     using px1 px2 hV gfr by auto
 qed
 
-binder_inductive (no_auto_equiv, no_auto_refresh) beta
-  subgoal premises prems for R B \<sigma> x1 x2 by (rule beta_equiv_ob[OF prems(1) prems(2) prems(3)])
-  subgoal premises prems for R B x1 x2 by (rule beta_refresh_ob[OF prems(3)])
+declare permute_usubst[equiv]
+
+lemma Fix_eq_usubst[refresh_intros]:
+  assumes il: "Fix (f::'a::var) x M = Fix f' x' M'"
+  and fV: "f \<notin> FVars V" "f' \<notin> FVars V"
+  shows "M[V <- x][Fix f x M <- f] = M'[V <- x'][Fix f' x' M' <- f']"
+proof -
+  from il obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+    "id_on (FVars M - ({f} \<union> {x})) g" "g f = f'" "g x = x'" "permute_term g M = M'"
+    unfolding term.inject by auto
+  show ?thesis
+    unfolding g(4,5,6)[symmetric] il[symmetric, unfolded g(4,5,6)[symmetric]]
+    by (rule premute_term_usubst2[OF g(1,2), symmetric])
+      (use g(3) fV g(4) in \<open>auto simp: id_on_def\<close>)
+qed
+
+lemma Let_eq_usubst[refresh_intros]:
+  assumes il: "\<And>N. term.Let (xy::'a::var dpair) N M = term.Let (dmap f xy) N M'"
+  and f: "bij f" "|supp f| <o |UNIV::'a set|"
+  and fV: "dset xy \<inter> FVars V = {}" "f ` dset xy \<inter> FVars V = {}"
+  shows "M[V <- dfst xy][W <- dsnd xy] = M'[V <- f (dfst xy)][W <- f (dsnd xy)]"
+proof -
+  from il[of M] obtain g where g: "bij g" "|supp g| <o |UNIV::'a set|"
+    "id_on (FVars M - dset xy) g" "dmap g xy = dmap f xy" "permute_term g M = M'"
+    unfolding term.inject by auto
+  have sel: "g (dfst xy) = f (dfst xy)" "g (dsnd xy) = f (dsnd xy)"
+    using g(1,4) f(1) by (metis dfst_dmap dsnd_dmap)+
+  show ?thesis
+    unfolding g(5)[symmetric] sel[symmetric]
+    by (rule premute_term_usubst2[OF g(1,2), symmetric])
+      (use g(3) fV sel in \<open>auto simp: id_on_def dset_alt\<close>)
+qed
+
+binder_inductive beta
   done
 
 lemma beta_deterministic:
